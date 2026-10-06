@@ -91,6 +91,13 @@ _ANTHROPIC_MODELS = [
     "claude-haiku-4-5",
     "claude-haiku-4-5-20251001",
 ]
+_ANTHROPIC_FIXED_SAMPLING_PREFIXES = (
+    "claude-opus-4-7",
+    "claude-opus-4-8",
+    "claude-opus-5",
+    "claude-sonnet-5",
+    "claude-fable-5",
+)
 _GOOGLE_MODELS = [
     "gemini-2.5-pro",
     "gemini-2.5-flash",
@@ -757,10 +764,11 @@ class CloudEngine(InferenceEngine):
         create_kwargs: Dict[str, Any] = {
             "model": model,
             "messages": chat_msgs,
-            # Anthropic SDK v1 moved legacy sampling parameters to extra_body.
-            "extra_body": {"temperature": temperature},
             "max_tokens": max_tokens,
         }
+        if not model.startswith(_ANTHROPIC_FIXED_SAMPLING_PREFIXES):
+            # Anthropic SDK v1 moved legacy sampling parameters to extra_body.
+            create_kwargs["extra_body"] = {"temperature": temperature}
         if system_text:
             create_kwargs["system"] = system_text
 
@@ -1437,10 +1445,11 @@ class CloudEngine(InferenceEngine):
         create_kwargs: Dict[str, Any] = {
             "model": model,
             "messages": chat_msgs,
-            # Anthropic SDK v1 moved legacy sampling parameters to extra_body.
-            "extra_body": {"temperature": temperature},
             "max_tokens": max_tokens,
         }
+        if not model.startswith(_ANTHROPIC_FIXED_SAMPLING_PREFIXES):
+            # Anthropic SDK v1 moved legacy sampling parameters to extra_body.
+            create_kwargs["extra_body"] = {"temperature": temperature}
         if system_text:
             create_kwargs["system"] = system_text
         with self._anthropic_client.messages.stream(**create_kwargs) as stream:
@@ -1897,10 +1906,11 @@ class CloudEngine(InferenceEngine):
         create_kwargs: Dict[str, Any] = {
             "model": model,
             "messages": chat_msgs,
-            # Anthropic SDK v1 moved legacy sampling parameters to extra_body.
-            "extra_body": {"temperature": temperature},
             "max_tokens": max_tokens,
         }
+        if not model.startswith(_ANTHROPIC_FIXED_SAMPLING_PREFIXES):
+            # Anthropic SDK v1 moved legacy sampling parameters to extra_body.
+            create_kwargs["extra_body"] = {"temperature": temperature}
         if system_text:
             create_kwargs["system"] = system_text
         raw_tools = kwargs.pop("tools", None)
