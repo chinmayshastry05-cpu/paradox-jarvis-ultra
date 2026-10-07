@@ -57,6 +57,8 @@ def _api_get(path: str, params: dict[str, str], api_key: str | None) -> Any:
             timeout=30.0,
             follow_redirects=False,
         )
+    except httpx.TimeoutException:
+        raise FXMacroDataError("FXMacroData did not answer in time") from None
     except httpx.HTTPError:
         # Transport errors can format the request; never interpolate them.
         raise FXMacroDataError("FXMacroData could not be reached") from None

@@ -160,6 +160,14 @@ def test_transport_error_text_is_never_interpolated():
     )
 
 
+def test_timeout_is_reported_as_such():
+    with patch(_GET, side_effect=httpx.ReadTimeout(f"slow {_KEY}")):
+        result = _run(action="indicator_catalogue", currency="USD")
+    assert result.content == (
+        "FXMacroData lookup failed: FXMacroData did not answer in time"
+    )
+
+
 def test_unexpected_exception_is_generic():
     with patch(_GET, side_effect=RuntimeError(_KEY)):
         result = _run(action="indicator_catalogue", currency="USD")
