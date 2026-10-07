@@ -773,9 +773,7 @@ def test_market_data_tool_produces_outbound_warn(tmp_path):
     assert "FXMacroData" in finding.potential_data_path
 
 
-def test_fxmacrodata_api_key_presence_is_reported_without_value(
-    tmp_path, monkeypatch
-):
+def test_fxmacrodata_api_key_presence_is_reported_without_value(tmp_path, monkeypatch):
     config = _low_noise_config()
     config.tools.enabled = "fx_macro_data"
     secret = "fxmacrodata-key-that-must-not-leak"
