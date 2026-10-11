@@ -2,6 +2,7 @@ import { useRef, useEffect, useState, useCallback } from 'react';
 import { useNavigate } from 'react-router';
 import { MessageBubble } from './MessageBubble';
 import { InputArea } from './InputArea';
+import { ChatHandTracking } from './ChatHandTracking';
 import { StreamingDots } from './StreamingDots';
 import { useAppStore } from '../../lib/store';
 import { shouldAutoplayFinishedReply, useTtsStore } from '../../lib/tts';
@@ -255,6 +256,7 @@ export function ChatArea() {
           </div>
         )}
       </div>
+      <ChatHandTracking />
       <InputArea />
     </div>
   );
