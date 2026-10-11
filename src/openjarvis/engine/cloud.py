@@ -97,6 +97,7 @@ _ANTHROPIC_FIXED_SAMPLING_PREFIXES = (
     "claude-opus-5",
     "claude-sonnet-5",
     "claude-fable-5",
+    "claude-haiku-5",
 )
 _GOOGLE_MODELS = [
     "gemini-2.5-pro",

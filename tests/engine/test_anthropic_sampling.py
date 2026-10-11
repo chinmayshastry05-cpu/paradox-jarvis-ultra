@@ -34,7 +34,15 @@ class _Stream:
 )
 @pytest.mark.parametrize(
     "model",
-    ["claude-opus-5-5", "claude-sonnet-5-5", "claude-opus-4-7", "claude-sonnet-5"],
+    [
+        "claude-opus-4-7",
+        "claude-opus-4-8",
+        "claude-opus-5-5",
+        "claude-sonnet-5",
+        "claude-sonnet-5-5",
+        "claude-fable-5-1",
+        "claude-haiku-5-5",
+    ],
 )
 async def test_fixed_sampling_models_omit_temperature(method, model):
     response = SimpleNamespace(
@@ -75,11 +83,14 @@ async def test_fixed_sampling_models_omit_temperature(method, model):
 @pytest.mark.parametrize(
     "method", ["_generate_anthropic", "_stream_anthropic", "_stream_full_anthropic"]
 )
-async def test_legacy_models_keep_requested_temperature(method):
+@pytest.mark.parametrize(
+    "model", ["claude-sonnet-4-6", "claude-haiku-4-5", "claude-haiku-4-5-20251001"]
+)
+async def test_legacy_models_keep_requested_temperature(method, model):
     response = SimpleNamespace(
         content=[SimpleNamespace(type="text", text="ok")],
         usage=SimpleNamespace(input_tokens=2, output_tokens=1),
-        model="claude-sonnet-4-6",
+        model=model,
         stop_reason="end_turn",
     )
     client = MagicMock()

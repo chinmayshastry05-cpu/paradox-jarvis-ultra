@@ -12,8 +12,22 @@ from openjarvis.engine.cloud import CloudEngine
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("mode", ["generate", "stream", "stream_full"])
-@pytest.mark.parametrize("model", ["test-model", "claude-opus-4-7"])
-async def test_anthropic_sdk_sampling_parameters(mode: str, model: str) -> None:
+@pytest.mark.parametrize(
+    "model,supports_temperature",
+    [
+        ("claude-sonnet-4-6", True),
+        ("claude-haiku-4-5-20251001", True),
+        ("claude-opus-4-7", False),
+        ("claude-opus-4-8", False),
+        ("claude-opus-5-5", False),
+        ("claude-sonnet-5-5", False),
+        ("claude-fable-5-1", False),
+        ("claude-haiku-5-5", False),
+    ],
+)
+async def test_anthropic_sdk_sampling_parameters(
+    mode: str, model: str, supports_temperature: bool
+) -> None:
     anthropic = pytest.importorskip("anthropic")
     http = pytest.importorskip("httpx2")
     requests = []
@@ -90,7 +104,7 @@ async def test_anthropic_sdk_sampling_parameters(mode: str, model: str) -> None:
             assert "".join(chunk.content or "" for chunk in chunks) == "Hello"
 
     assert len(requests) == 1
-    if model == "test-model":
+    if supports_temperature:
         assert requests[0]["temperature"] == 0.35
     else:
         assert "temperature" not in requests[0]
