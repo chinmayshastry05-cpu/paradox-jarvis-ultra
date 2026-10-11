@@ -128,14 +128,14 @@ class WebSearchTool(BaseTool):
         self._youcom_api_key = youcom_api_key or os.environ.get(YOUCOM_API_KEY_ENV)
         self._serply_api_key = serply_api_key or os.environ.get(SERPLY_API_KEY_ENV)
         self._serply_location = serply_location or os.environ.get(SERPLY_LOCATION_ENV)
-        self._firecrawl_api_key = firecrawl_api_key or os.environ.get(
-            FIRECRAWL_API_KEY_ENV
-        )
+        self._firecrawl_api_key = (
+            firecrawl_api_key or os.environ.get(FIRECRAWL_API_KEY_ENV) or ""
+        ).strip() or None
         self._firecrawl_api_url = (
-            firecrawl_api_url
-            or os.environ.get(FIRECRAWL_API_URL_ENV)
-            or FIRECRAWL_DEFAULT_API_URL
-        ).rstrip("/")
+            (firecrawl_api_url or os.environ.get(FIRECRAWL_API_URL_ENV) or "")
+            .strip()
+            .rstrip("/")
+        ) or FIRECRAWL_DEFAULT_API_URL
         # Self-hosted instances usually run without auth, so a custom URL
         # enables the engine even when no key is set.
         self._firecrawl_self_hosted = (
@@ -532,21 +532,26 @@ class WebSearchTool(BaseTool):
             if status == 401:
                 raise _WebSearchEngineError(
                     f"Firecrawl rejected the credential in {FIRECRAWL_API_KEY_ENV}"
-                ) from exc
+                ) from None
             if status == 402:
                 raise _WebSearchEngineError(
                     "Firecrawl credits are exhausted for this key. Check the "
                     f"plan or create a new key at {FIRECRAWL_KEYS_URL}"
-                ) from exc
+                ) from None
             if status == 429:
                 raise _WebSearchEngineError(
                     "Firecrawl rate limit reached (HTTP 429)"
-                ) from exc
+                ) from None
             raise _WebSearchEngineError(
                 f"Firecrawl search failed with HTTP {status}"
-            ) from exc
-        except (httpx.HTTPError, ValueError) as exc:
-            raise _WebSearchEngineError(f"Firecrawl search failed: {exc}") from exc
+            ) from None
+        except (httpx.HTTPError, httpx.InvalidURL, ValueError) as exc:
+            # Header validation can include the Authorization value; URL
+            # parsing errors can include credentials from a self-hosted URL.
+            # execute() logs this message and returns it in fallback metadata.
+            raise _WebSearchEngineError(
+                f"Firecrawl search failed ({type(exc).__name__})"
+            ) from None
 
         formatted, count = self._format_firecrawl_results(payload)
         metadata: dict[str, Any] = {"num_results": count, "engine": "firecrawl"}
@@ -590,14 +595,12 @@ class WebSearchTool(BaseTool):
             )
             response.raise_for_status()
             payload = response.json()
-        except (httpx.HTTPError, ValueError) as exc:
+        except (httpx.HTTPError, httpx.InvalidURL, ValueError) as exc:
             reason = type(exc).__name__
             if isinstance(exc, httpx.HTTPStatusError):
                 reason = f"HTTP {exc.response.status_code}"
             logger.warning(
-                "Firecrawl scrape failed for %s (%s); falling back to local "
-                "HTML extraction",
-                url,
+                "Firecrawl scrape failed (%s); falling back to local HTML extraction",
                 reason,
             )
             return None

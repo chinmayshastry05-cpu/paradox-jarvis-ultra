@@ -1249,6 +1249,15 @@ class TestFirecrawlSearch:
         assert calls["json"]["origin"] == "openjarvis"
         assert result.metadata["engine"] == "firecrawl"
 
+    def test_pasted_key_whitespace_is_trimmed(self, monkeypatch):
+        monkeypatch.setenv("FIRECRAWL_API_KEY", "  fc-test\n")
+        calls = self._mock_post(monkeypatch)
+
+        result = WebSearchTool(engine="firecrawl").execute(query="test query")
+
+        assert result.success is True
+        assert calls["headers"]["Authorization"] == "Bearer fc-test"
+
     def test_result_format_matches_the_other_engines(self, monkeypatch):
         """Same labeled Source/Summary shape agents already parse (#390)."""
         monkeypatch.setenv("FIRECRAWL_API_KEY", "fc-test")
@@ -1507,6 +1516,65 @@ class TestFirecrawlScrapeExtraction:
 
         assert result.success is False
         assert "private IP blocked" in result.content
+
+
+class TestFirecrawlCredentialSafety:
+    @pytest.fixture
+    def http_client(self, monkeypatch):
+        """Exercise real HTTPX/header validation with an in-memory connection."""
+        import httpcore
+        import httpx
+
+        transport = httpx.HTTPTransport()
+        transport._pool = httpcore.ConnectionPool(
+            network_backend=httpcore.MockBackend([])
+        )
+        with httpx.Client(transport=transport, trust_env=False) as client:
+            monkeypatch.setattr(httpx, "post", client.post)
+            yield client
+
+    @pytest.mark.parametrize("mode", ["search", "scrape"])
+    @pytest.mark.parametrize("failure", ["header", "url"])
+    def test_client_errors_never_expose_credentials(
+        self, monkeypatch, caplog, http_client, mode, failure
+    ):
+        secret = "fc-private-test-value"
+        tool = WebSearchTool(
+            engine="firecrawl",
+            # Interior newlines still fail after trimming pasted whitespace.
+            firecrawl_api_key=secret + "\ninvalid" if failure == "header" else secret,
+            firecrawl_api_url=(
+                f"https://example.test:{secret}" if failure == "url" else None
+            ),
+        )
+        monkeypatch.setattr(tool, "_duckduckgo_search", lambda *a: "Search fallback")
+        monkeypatch.setattr(tool, "_fetch_url", lambda *a: "Local fallback")
+        monkeypatch.setattr("openjarvis.tools.web_search.check_ssrf", lambda url: None)
+        query = "https://example.test/article" if mode == "scrape" else "test query"
+
+        with caplog.at_level("WARNING"):
+            result = tool.execute(query=query)
+
+        assert result.success is True
+        expected_error = "LocalProtocolError" if failure == "header" else "InvalidURL"
+        assert expected_error in caplog.text
+        assert secret not in caplog.text
+        assert secret not in result.content
+        assert secret not in str(result.metadata)
+        if mode == "search":
+            assert expected_error in result.metadata["fallback_reason"]
+            assert result.metadata["fallback_from"] == "firecrawl"
+        else:
+            assert result.metadata["extractor"] == "local"
+
+    def test_scrape_failure_does_not_log_private_target_url(self, caplog, http_client):
+        tool = WebSearchTool(engine="firecrawl", firecrawl_api_key="fc-key\ninvalid")
+        with caplog.at_level("WARNING"):
+            text = tool._firecrawl_extract("https://example.test/?token=private-token")
+        assert text is None
+        assert "LocalProtocolError" in caplog.text
+        assert "private-token" not in caplog.text
+        assert "fc-key" not in caplog.text
 
 
 class TestFallbackVisibility:

@@ -1109,7 +1109,9 @@ def _web_search_destination() -> str:
             engine = "youcom"
         elif os.environ.get("SERPLY_API_KEY"):
             engine = "serply"
-        elif os.environ.get("FIRECRAWL_API_KEY") or _firecrawl_self_hosted_url():
+        elif (os.environ.get("FIRECRAWL_API_KEY") or "").strip() or (
+            _firecrawl_self_hosted_url()
+        ):
             engine = "firecrawl"
         else:
             engine = "youcom"

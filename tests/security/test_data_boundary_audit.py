@@ -1430,6 +1430,16 @@ class TestWebSearchDestination:
         monkeypatch.setenv("FIRECRAWL_API_KEY", "fc-test")
         assert _web_search_destination() == "Firecrawl search API"
 
+    def test_blank_firecrawl_configuration_matches_runtime(self, monkeypatch):
+        from openjarvis.security.data_boundary_audit import _web_search_destination
+        from openjarvis.tools.web_search import WebSearchTool
+
+        self._clear(monkeypatch)
+        monkeypatch.setenv("FIRECRAWL_API_KEY", " \n")
+        monkeypatch.setenv("FIRECRAWL_API_URL", " \n")
+        assert WebSearchTool()._resolve_engine() == "youcom"
+        assert _web_search_destination() == "You.com web search API (keyless free tier)"
+
     def test_firecrawl_self_hosted_names_only_the_host(self, monkeypatch):
         """A self-hosted instance keeps queries off the hosted API, so the
         audit says so, without echoing a URL that may carry credentials."""
