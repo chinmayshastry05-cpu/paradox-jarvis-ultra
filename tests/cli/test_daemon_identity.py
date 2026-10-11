@@ -105,8 +105,25 @@ def test_reboot_rejects_even_an_identical_pid_and_start_tick(linux_process):
     "argv",
     [
         ["/venv/bin/jarvis", "serve"],
+        ["/venv/bin/jarvis", "--quiet", "serve"],
+        ["/venv/bin/jarvis", "--verbose", "--pick-model", "--", "serve"],
         ["/venv/bin/python3", "/venv/bin/jarvis", "--quiet", "serve"],
+        ["/venv/bin/python3", "-u", "/venv/bin/jarvis", "serve"],
+        ["/venv/bin/python3", "-uO", "-Wignore", "-Xdev", "/venv/bin/jarvis", "serve"],
+        ["/venv/bin/python3", "--", "/venv/bin/jarvis", "serve"],
         ["/venv/bin/python3", "-u", "-m", "openjarvis.cli", "serve"],
+        ["/venv/bin/python3", "-mopenjarvis.cli", "serve"],
+        ["/venv/bin/python3", "-W", "", "-m", "openjarvis.cli", "serve"],
+        [
+            "/venv/bin/python3",
+            "-W",
+            "ignore",
+            "-X",
+            "dev",
+            "-m",
+            "openjarvis.cli",
+            "serve",
+        ],
     ],
 )
 def test_live_legacy_daemon_is_migrated_without_wall_clock(linux_process, argv):
@@ -124,7 +141,23 @@ def test_live_legacy_daemon_is_migrated_without_wall_clock(linux_process, argv):
     "argv",
     [
         ["/usr/bin/python3", "-c", "import time; time.sleep(30)"],
+        ["/usr/bin/python3", "/tmp/worker.py", "-m", "openjarvis.cli", "serve"],
+        ["/usr/bin/python3", "-u", "/tmp/worker.py", "-m", "openjarvis.cli", "serve"],
+        ["/usr/bin/python3", "-c", "pass", "-m", "openjarvis.cli", "serve"],
+        ["/usr/bin/python3", "--", "-m", "openjarvis.cli", "serve"],
+        ["/usr/bin/python3", "-W", "-m", "openjarvis.cli", "serve"],
+        [
+            "/usr/bin/python3",
+            "-W",
+            "",
+            "/tmp/worker.py",
+            "-m",
+            "openjarvis.cli",
+            "serve",
+        ],
+        ["/usr/bin/not-python", "-m", "openjarvis.cli", "serve"],
         ["/venv/bin/jarvis", "ask", "serve"],
+        ["/venv/bin/jarvis", "--help", "serve"],
         ["/usr/bin/python3", "-m", "other", "-m", "openjarvis.cli", "serve"],
     ],
 )
@@ -172,6 +205,34 @@ def test_legacy_migration_rechecks_identity_after_reading_command(
 
     assert daemon_cmd._read_pid() is None
     assert daemon_cmd._read_pid_identity() == {}
+
+
+def test_legacy_migration_write_failure_keeps_verified_daemon(
+    linux_process, monkeypatch
+):
+    daemon_cmd._PID_FILE.write_text("4321")
+    daemon_cmd._STATE_FILE.write_text(
+        json.dumps({"pid": 4321, "host": "127.0.0.1", "port": 8899})
+    )
+    monkeypatch.setattr(
+        daemon_cmd,
+        "secure_write_json",
+        Mock(side_effect=PermissionError("state directory is read-only")),
+    )
+    terminate = Mock()
+    monkeypatch.setattr(daemon_cmd, "terminate_process", terminate)
+
+    status = CliRunner().invoke(daemon_cmd.status)
+    assert status.exit_code == 0, status.output
+    assert "Server is running" in status.output
+    assert daemon_cmd._PID_FILE.read_text() == "4321"
+    assert daemon_cmd._read_pid_identity() == {}
+    terminate.assert_not_called()
+
+    stopped = CliRunner().invoke(daemon_cmd.stop)
+    assert stopped.exit_code == 0, stopped.output
+    terminate.assert_called_once_with(4321, grace_seconds=10.0)
+    assert not daemon_cmd._PID_FILE.exists()
 
 
 def test_child_promotion_preserves_the_child_identity(linux_process):

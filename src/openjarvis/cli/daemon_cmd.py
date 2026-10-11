@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import secrets
 import subprocess
 import sys
@@ -73,31 +74,80 @@ def _read_pid_identity() -> dict:
     return identity
 
 
+def _legacy_cli_args(argv: list[str]) -> list[str] | None:
+    """Find CLI arguments without treating script arguments as Python options."""
+    entry_points = {"jarvis", "jarvis.exe"}
+    if not argv:
+        return None
+    executable = Path(argv[0]).name
+    if executable in entry_points:
+        return argv[1:]
+    if not re.fullmatch(
+        r"(?:python|pypy)(?:\d+(?:\.\d+)*)?[tdm]?(?:\.exe)?", executable
+    ):
+        return None
+
+    index = 1
+    while index < len(argv):
+        arg = argv[index]
+        if arg == "--":
+            index += 1
+            break
+        if not arg.startswith("-") or arg == "-":
+            break
+        if arg == "--check-hash-based-pycs":
+            index += 2  # Its value is not a module or script argument.
+            continue
+        if arg.startswith("--check-hash-based-pycs="):
+            index += 1
+            continue
+        # Python accepts combined flags (-uO) and attached values (-Wignore,
+        # -Xdev, -mopenjarvis.cli). Value-taking flags consume the remainder.
+        options = arg[1:]
+        while options:
+            option, options = options[0], options[1:]
+            if option == "c":
+                return None
+            if option in "mWX":
+                if not options:
+                    index += 1
+                    if index >= len(argv):
+                        return None
+                    options = argv[index]
+                if option == "m":
+                    return argv[index + 1 :] if options == "openjarvis.cli" else None
+                break
+            if option not in "bBdEiIOPqRsSuvx":
+                return None
+        index += 1
+    # The first positional argument is the script. Never look beyond it for
+    # -m: those tokens belong to that script, not the Python interpreter.
+    if index < len(argv) and Path(argv[index]).name in entry_points:
+        return argv[index + 1 :]
+    return None
+
+
 def _legacy_linux_daemon(pid: int) -> bool | None:
     """Recognize an old registration before it has a saved process identity."""
     try:
-        argv = [
-            os.fsdecode(arg)
-            for arg in Path(f"/proc/{pid}/cmdline").read_bytes().split(b"\0")
-            if arg
-        ]
+        arguments = Path(f"/proc/{pid}/cmdline").read_bytes().split(b"\0")
     except OSError:
         return None
-    # Console entry points are either argv[0] or the script passed to Python.
-    for index in (0, 1):
-        if len(argv) > index and Path(argv[index]).name in {"jarvis", "jarvis.exe"}:
-            command = argv[index + 1 :]
-            break
-    else:
-        # `start` uses this form; supervised servers may add interpreter flags.
-        try:
-            index = argv.index("-m")
-        except ValueError:
-            return False
-        if "-c" in argv[:index] or argv[index + 1 : index + 2] != ["openjarvis.cli"]:
-            return False
-        command = argv[index + 2 :]
-    return next((arg for arg in command if not arg.startswith("-")), None) == "serve"
+    if arguments and arguments[-1] == b"":
+        arguments.pop()
+    # Empty option values still occupy an argument; dropping them shifts the
+    # execution boundary and can make a script's own -m look like Python's.
+    argv = [os.fsdecode(arg) for arg in arguments]
+    command = _legacy_cli_args(argv)
+    if command is None:
+        return False
+    # These are the CLI's global boolean options. Help/version and unknown
+    # options do not launch a server, even when followed by the word serve.
+    while command and command[0] in {"--verbose", "--quiet", "--pick-model"}:
+        command = command[1:]
+    if command and command[0] == "--":
+        command = command[1:]
+    return bool(command) and command[0] == "serve"
 
 
 def _registered_pid_alive(pid: int) -> bool:
@@ -125,7 +175,12 @@ def _registered_pid_alive(pid: int) -> bool:
         if confirmed is not None and confirmed != current:
             return False
         if confirmed is not None:
-            secure_write_json(_PID_FILE.with_suffix(".identity.json"), confirmed)
+            try:
+                secure_write_json(_PID_FILE.with_suffix(".identity.json"), confirmed)
+            except OSError:
+                # Migration is optional. A read-only/full filesystem must not
+                # make a verified live daemon inaccessible to status or stop.
+                pass
     return True
 
 
