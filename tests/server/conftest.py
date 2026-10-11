@@ -9,6 +9,9 @@ autouse fixture redirects the traces DB to a per-test temp path.
 
 from __future__ import annotations
 
+import threading
+from types import SimpleNamespace
+
 import pytest
 
 
@@ -52,3 +55,30 @@ def _isolate_connector_dbs(tmp_path_factory):
         mp.setattr("openjarvis.core.config.DEFAULT_CONFIG_DIR", home)
         mp.setattr("openjarvis.connectors.sync_engine.DEFAULT_CONFIG_DIR", home)
         yield
+
+
+@pytest.fixture(autouse=True)
+def _finish_connector_syncs(monkeypatch):
+    """Drain each test's sync workers before its mocks and DB isolation expire."""
+    from openjarvis.server import connectors_router
+
+    workers: list[threading.Thread] = []
+
+    def tracked_thread(*args, **kwargs):
+        worker = threading.Thread(*args, **kwargs)
+        workers.append(worker)
+        return worker
+
+    # Patch only the router's view of threading. TestClient and tests' own
+    # coordination threads must continue to use the real Thread constructor.
+    router_threading = SimpleNamespace(**vars(threading))
+    router_threading.Thread = tracked_thread
+    monkeypatch.setattr(connectors_router, "threading", router_threading)
+    try:
+        yield
+    finally:
+        for worker in workers:
+            if worker.ident is not None:
+                # A timeout would restore paths/mocks under a live writer.
+                # Tests must release blocked workers in their finally blocks.
+                worker.join()
