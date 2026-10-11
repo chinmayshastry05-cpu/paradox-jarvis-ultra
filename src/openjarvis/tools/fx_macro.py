@@ -275,7 +275,7 @@ _HANDLERS = {
 }
 
 
-@ToolRegistry.register(_TOOL_NAME)
+@ToolRegistry.register("fx_macro_data")
 class FXMacroDataTool(BaseTool):
     """Look up official macroeconomic releases, release calendars and FX rates."""
 
