@@ -286,6 +286,47 @@ def test_calendar_filters_and_truncates_to_limit():
     assert events[0]["reference_period"] == "2026-09-30"
 
 
+@pytest.mark.parametrize("precision", [{}, {"time_announced": True}])
+def test_calendar_uses_required_epoch_when_optional_utc_string_is_absent(precision):
+    # CalendarReleaseRow requires the epoch and slug, while formatted UTC and
+    # the additive precision fields are optional in the published contract.
+    row = {
+        "release": "inflation",
+        "announcement_datetime": 1789129800,
+        "announcement_datetime_local": "2026-09-11T08:30:00-04:00",
+        **precision,
+    }
+    with patch(_GET, return_value=_response(body={"data": [row]})):
+        result = _run(action="release_calendar", currency="USD")
+    assert result.success
+    event = json.loads(result.content)["events"][0]
+    assert event["release_time_utc"] == "2026-09-11T12:30:00+00:00"
+    assert event["time_announced"] is precision.get("time_announced")
+
+
+@pytest.mark.parametrize(
+    "precision", [{"time_announced": False}, {"release_time_assumed": True}]
+)
+def test_calendar_never_reports_a_date_marker_as_an_exact_release_time(precision):
+    row = {
+        "release": "gdp",
+        "announcement_datetime": 1791777600,
+        "announcement_datetime_utc": "2026-10-12T04:00:00Z",
+        "announcement_date": "2026-10-12",
+        "date": "2026-09-30",
+        **precision,
+    }
+    with patch(_GET, return_value=_response(body={"data": [row]})):
+        result = _run(action="release_calendar", currency="USD")
+    assert result.success
+    event = json.loads(result.content)["events"][0]
+    assert event["release_time_utc"] is None
+    assert event["announcement_date"] == "2026-10-12"
+    assert event["reference_period"] == "2026-09-30"
+    for field, value in precision.items():
+        assert event[field] is value
+
+
 def test_catalogue_is_summarised_and_empty_is_an_error():
     body = {
         "inflation": {

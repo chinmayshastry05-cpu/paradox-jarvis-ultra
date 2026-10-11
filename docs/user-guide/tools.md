@@ -451,7 +451,9 @@ enabled = "fx_macro_data"
 | `limit` | integer | No | Rows to return, 1 to 100 (default: 20) |
 
 For calendar rows, `reference_period` is the period the figure describes, and
-`release_time_utc` is when it is published.
+`release_time_utc` is the scheduled release time. If the publisher has announced
+only a date (`time_announced=false`) or the time is assumed, `release_time_utc`
+is null; `announcement_date` preserves the publisher's local release date.
 
 ### CodeInterpreter
 

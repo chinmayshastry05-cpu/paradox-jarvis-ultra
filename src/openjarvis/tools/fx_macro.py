@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import json
 import re
-from datetime import date
+from datetime import date, datetime, timezone
 from typing import Any
 
 import httpx
@@ -187,6 +187,23 @@ def _indicator_history(params: dict[str, Any], api_key: str | None) -> dict:
     }
 
 
+def _calendar_release_time(row: dict[str, Any]) -> str | None:
+    """Keep date markers distinct from scheduled instants in calendar rows."""
+    if row.get("time_announced") is False or row.get("release_time_assumed") is True:
+        return None
+    if row.get("announcement_datetime_utc"):
+        return row["announcement_datetime_utc"]
+    # The epoch is required by CalendarReleaseRow; the formatted UTC field is
+    # optional. Older responses may also omit the additive precision fields.
+    timestamp = row.get("announcement_datetime")
+    if isinstance(timestamp, int) and not isinstance(timestamp, bool):
+        try:
+            return datetime.fromtimestamp(timestamp, timezone.utc).isoformat()
+        except (OverflowError, OSError, ValueError):
+            return None
+    return None
+
+
 def _release_calendar(params: dict[str, Any], api_key: str | None) -> dict:
     currency = _currency(params.get("currency"), "currency")
     query = {}
@@ -201,7 +218,10 @@ def _release_calendar(params: dict[str, Any], api_key: str | None) -> dict:
             {
                 "release": row.get("release"),
                 "name": row.get("name"),
-                "release_time_utc": row.get("announcement_datetime_utc"),
+                "release_time_utc": _calendar_release_time(row),
+                "time_announced": row.get("time_announced"),
+                "announcement_date": row.get("announcement_date"),
+                "release_time_assumed": row.get("release_time_assumed"),
                 "reference_period": row.get("date"),
                 "importance": row.get("event_importance"),
             }
