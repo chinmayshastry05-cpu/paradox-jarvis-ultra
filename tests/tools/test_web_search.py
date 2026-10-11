@@ -1519,6 +1519,65 @@ class TestFirecrawlScrapeExtraction:
 
 
 class TestFirecrawlCredentialSafety:
+    @pytest.mark.parametrize("mode", ["search", "scrape"])
+    @pytest.mark.parametrize("api_key", [None, "fc-test-key"])
+    @pytest.mark.parametrize(
+        "username,password",
+        [("private-user", "private-password"), ("private@user", "private:pass/word")],
+    )
+    def test_successful_basic_auth_never_logs_url_credentials(
+        self, monkeypatch, caplog, mode, api_key, username, password
+    ):
+        import base64
+        from urllib.parse import quote
+
+        import httpx
+
+        requests = []
+        encoded_user = quote(username, safe="")
+        encoded_password = quote(password, safe="")
+        tool = WebSearchTool(
+            engine="firecrawl",
+            firecrawl_api_key=api_key,
+            firecrawl_api_url=(
+                f"https://{encoded_user}:{encoded_password}@example.test/firecrawl"
+            ),
+        )
+
+        def respond(request):
+            requests.append(request)
+            data = {"web": []} if mode == "search" else {"markdown": "Page text"}
+            return httpx.Response(200, json={"success": True, "data": data})
+
+        monkeypatch.setattr("openjarvis.tools.web_search.check_ssrf", lambda url: None)
+        query = "https://example.test/article" if mode == "scrape" else "test query"
+        with httpx.Client(
+            transport=httpx.MockTransport(respond), trust_env=False
+        ) as client:
+            monkeypatch.setattr(httpx, "post", client.post)
+            with caplog.at_level("INFO", logger="httpx"):
+                result = tool.execute(query=query)
+
+        assert result.success is True
+        assert len(requests) == 1
+        request = requests[0]
+        endpoint = f"https://example.test/firecrawl/v2/{mode}"
+        assert str(request.url) == endpoint
+        assert endpoint in caplog.text
+        scheme, encoded_auth = request.headers["Authorization"].split(" ", 1)
+        assert scheme == "Basic"
+        assert base64.b64decode(encoded_auth).decode() == f"{username}:{password}"
+        for secret in (
+            username,
+            password,
+            encoded_user,
+            encoded_password,
+            encoded_auth,
+        ):
+            assert secret not in caplog.text
+            assert secret not in result.content
+            assert secret not in str(result.metadata)
+
     @pytest.fixture
     def http_client(self, monkeypatch):
         """Exercise real HTTPX/header validation with an in-memory connection."""

@@ -484,6 +484,20 @@ class WebSearchTool(BaseTool):
             headers["Authorization"] = f"Bearer {self._firecrawl_api_key}"
         return headers
 
+    def _firecrawl_endpoint(self, operation: str) -> tuple[str, tuple[str, str] | None]:
+        """Keep self-hosted Basic Auth out of URLs exposed by HTTPX logging."""
+        import httpx
+
+        url = httpx.URL(f"{self._firecrawl_api_url}/v2/{operation}")
+        auth = None
+        if url.username or url.password:
+            # HTTPX already uses URL userinfo as Basic Auth, overriding a
+            # Bearer header when both are present. Preserve that behavior while
+            # ensuring its INFO request log contains only the endpoint URL.
+            auth = (url.username, url.password)
+            url = url.copy_with(username=None, password=None)
+        return str(url), auth
+
     @staticmethod
     def _format_firecrawl_results(payload: dict[str, Any]) -> tuple[str, int]:
         """Render a Firecrawl search payload in the shared result format.
@@ -515,14 +529,16 @@ class WebSearchTool(BaseTool):
         if not self._firecrawl_api_key and not self._firecrawl_self_hosted:
             raise _WebSearchEngineError(f"{FIRECRAWL_API_KEY_ENV} is not set")
         try:
+            endpoint, auth = self._firecrawl_endpoint("search")
             response = httpx.post(
-                f"{self._firecrawl_api_url}/v2/search",
+                endpoint,
                 json={
                     "query": query,
                     "limit": max_results,
                     "origin": FIRECRAWL_ORIGIN,
                 },
                 headers=self._firecrawl_headers(),
+                auth=auth,
                 timeout=30.0,
             )
             response.raise_for_status()
@@ -580,8 +596,9 @@ class WebSearchTool(BaseTool):
         import httpx
 
         try:
+            endpoint, auth = self._firecrawl_endpoint("scrape")
             response = httpx.post(
-                f"{self._firecrawl_api_url}/v2/scrape",
+                endpoint,
                 json={
                     "url": url,
                     "formats": ["markdown"],
@@ -591,6 +608,7 @@ class WebSearchTool(BaseTool):
                     "origin": FIRECRAWL_ORIGIN,
                 },
                 headers=self._firecrawl_headers(),
+                auth=auth,
                 timeout=60.0,
             )
             response.raise_for_status()
