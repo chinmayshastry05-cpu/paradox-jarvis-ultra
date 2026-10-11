@@ -129,9 +129,13 @@ class TestPidLiveness:
         proc = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(10)"])
         try:
             pid_file = tmp_path / "server.pid"
-            pid_file.write_text(str(proc.pid))
-
-            with patch("openjarvis.cli.daemon_cmd._PID_FILE", pid_file):
+            with (
+                patch("openjarvis.cli.daemon_cmd._PID_FILE", pid_file),
+                patch(
+                    "openjarvis.cli.daemon_cmd._STATE_FILE", tmp_path / "server.json"
+                ),
+            ):
+                _write_pid(proc.pid)
                 assert _read_pid() == proc.pid
 
             assert pid_file.exists()

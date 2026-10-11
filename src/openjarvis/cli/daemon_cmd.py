@@ -33,27 +33,100 @@ def _pid_alive(pid: int) -> bool:
     return process_alive(pid)
 
 
-def _registered_pid_alive(pid: int) -> bool:
-    """Reject a reused Linux PID whose process started after registration."""
-    if not _pid_alive(pid):
-        return False
+def _linux_process_identity(pid: int) -> dict | None:
+    """Read a process identity unaffected by wall-clock adjustments.
+
+    Linux's boot epoch changes when the clock is set; boot_id and start ticks
+    do not. Both are needed because PIDs and start ticks can repeat after boot.
+    """
     if sys.platform != "linux":
-        return True
+        return None
     try:
         # The comm field may contain spaces and parentheses; fields after its
         # final ')' begin with field 3. Field 22 is start time in clock ticks.
         stat = Path(f"/proc/{pid}/stat").read_text()
         start_ticks = int(stat.rsplit(")", 1)[1].split()[19])
-        boot_line = next(
-            line
-            for line in Path("/proc/stat").read_text().splitlines()
-            if line.startswith("btime ")
-        )
-        started_at = int(boot_line.split()[1]) + start_ticks / os.sysconf("SC_CLK_TCK")
-        return started_at <= _PID_FILE.stat().st_mtime
-    except (OSError, ValueError, IndexError, StopIteration):
-        # Preserve liveness-only behavior where process metadata is unavailable.
+        boot_id = Path("/proc/sys/kernel/random/boot_id").read_text().strip()
+        if start_ticks < 0 or not boot_id:
+            return None
+        return {"pid": pid, "boot_id": boot_id, "start_ticks": start_ticks}
+    except (OSError, ValueError, IndexError):
+        return None
+
+
+def _read_pid_identity() -> dict:
+    """Read the optional Linux identity sidecar, preserving legacy PID files."""
+    try:
+        identity = json.loads(_PID_FILE.with_suffix(".identity.json").read_text())
+    except (OSError, ValueError):
+        return {}
+    if (
+        not isinstance(identity, dict)
+        or type(identity.get("pid")) is not int
+        or identity["pid"] <= 0
+        or type(identity.get("start_ticks")) is not int
+        or identity["start_ticks"] < 0
+        or not isinstance(identity.get("boot_id"), str)
+        or not identity["boot_id"]
+    ):
+        return {}
+    return identity
+
+
+def _legacy_linux_daemon(pid: int) -> bool | None:
+    """Recognize an old registration before it has a saved process identity."""
+    try:
+        argv = [
+            os.fsdecode(arg)
+            for arg in Path(f"/proc/{pid}/cmdline").read_bytes().split(b"\0")
+            if arg
+        ]
+    except OSError:
+        return None
+    # Console entry points are either argv[0] or the script passed to Python.
+    for index in (0, 1):
+        if len(argv) > index and Path(argv[index]).name in {"jarvis", "jarvis.exe"}:
+            command = argv[index + 1 :]
+            break
+    else:
+        # `start` uses this form; supervised servers may add interpreter flags.
+        try:
+            index = argv.index("-m")
+        except ValueError:
+            return False
+        if "-c" in argv[:index] or argv[index + 1 : index + 2] != ["openjarvis.cli"]:
+            return False
+        command = argv[index + 2 :]
+    return next((arg for arg in command if not arg.startswith("-")), None) == "serve"
+
+
+def _registered_pid_alive(pid: int) -> bool:
+    """Reject reused Linux PIDs without comparing mutable wall-clock times."""
+    if not _pid_alive(pid):
+        return False
+    if sys.platform != "linux":
         return True
+    current = _linux_process_identity(pid)
+    if current is None:
+        # Restricted or unmounted procfs must not orphan a live daemon.
+        return True
+    recorded = _read_pid_identity()
+    if recorded.get("pid") == pid:
+        return current == recorded
+    # A legacy file has no historical identity to compare. Do not adopt an
+    # arbitrary live process just because its PID was recycled. Once verified,
+    # migrate the registration while the caller holds the state lock.
+    is_daemon = _legacy_linux_daemon(pid)
+    if is_daemon is False:
+        return False
+    if is_daemon:
+        # Do not pair an old start tick with a replacement process's command.
+        confirmed = _linux_process_identity(pid)
+        if confirmed is not None and confirmed != current:
+            return False
+        if confirmed is not None:
+            secure_write_json(_PID_FILE.with_suffix(".identity.json"), confirmed)
+    return True
 
 
 @contextmanager
@@ -98,6 +171,8 @@ def _clear_state_unlocked(pid: int) -> None:
         _PID_FILE.unlink(missing_ok=True)
     if _read_state().get("pid") == pid:
         _STATE_FILE.unlink(missing_ok=True)
+    if _read_pid_identity().get("pid") == pid:
+        _PID_FILE.with_suffix(".identity.json").unlink(missing_ok=True)
 
 
 def _read_pid_unlocked() -> int | None:
@@ -158,6 +233,11 @@ def _write_pid_unlocked(
     if existing is not None and existing != pid and _registered_pid_alive(existing):
         if not (ready and same_launch and current.get("ready") is False):
             raise RuntimeError(f"Another server is already registered (PID {existing})")
+    identity = _linux_process_identity(pid)
+    if identity is not None:
+        secure_write_json(_PID_FILE.with_suffix(".identity.json"), identity)
+    else:
+        _PID_FILE.with_suffix(".identity.json").unlink(missing_ok=True)
     secure_write_text(_PID_FILE, str(pid))
     if host or port is not None:
         state = {"pid": pid, "host": host, "port": port}
