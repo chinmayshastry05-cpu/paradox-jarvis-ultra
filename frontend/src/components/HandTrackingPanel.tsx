@@ -8,7 +8,7 @@ import simdLoaderUrl from '@mediapipe/tasks-vision/vision_wasm_internal.js?url';
 import simdWasmUrl from '@mediapipe/tasks-vision/vision_wasm_internal.wasm?url';
 import noSimdLoaderUrl from '@mediapipe/tasks-vision/vision_wasm_nosimd_internal.js?url';
 import noSimdWasmUrl from '@mediapipe/tasks-vision/vision_wasm_nosimd_internal.wasm?url';
-import { Camera, Hand, LoaderCircle, StopCircle } from 'lucide-react';
+import { Camera, Hand, StopCircle } from 'lucide-react';
 
 const HAND_CONNECTIONS = [
   [0, 1], [1, 2], [2, 3], [3, 4],
@@ -85,21 +85,27 @@ export function HandTrackingPanel() {
   const generationRef = useRef(0);
   const previousGestureRef = useRef<string>('');
 
-  const stopTracking = useCallback(() => {
+  const releaseTracking = useCallback(() => {
     generationRef.current += 1;
     if (frameRef.current !== null) cancelAnimationFrame(frameRef.current);
     frameRef.current = null;
-    detectorRef.current?.close();
+    const detector = detectorRef.current;
     detectorRef.current = null;
+    // Camera cleanup must still run if the WASM runtime failed during shutdown.
+    try { detector?.close(); } catch { /* Already failed/closed. */ }
     streamRef.current?.getTracks().forEach((track) => track.stop());
     streamRef.current = null;
     if (videoRef.current) videoRef.current.srcObject = null;
+  }, []);
+
+  const stopTracking = useCallback(() => {
+    releaseTracking();
     setLandmarks([]);
     setGesture('No hand detected');
     previousGestureRef.current = '';
     setState('idle');
     setError('');
-  }, []);
+  }, [releaseTracking]);
 
   const chooseCamera = useCallback(async () => {
     if (!navigator.mediaDevices?.getUserMedia) {
@@ -174,8 +180,10 @@ export function HandTrackingPanel() {
       if (!video) throw new Error('Camera preview is unavailable.');
       video.srcObject = stream;
       await video.play();
+      if (generationRef.current !== generation) return;
 
       const fileset = await localVisionFileset();
+      if (generationRef.current !== generation) return;
       const detector = await HandLandmarker.createFromOptions(fileset, {
         baseOptions: {
           modelAssetPath: new URL('/models/hand_landmarker.task', window.location.origin).href,
@@ -206,7 +214,15 @@ export function HandTrackingPanel() {
           video.currentTime !== lastVideoTime
         ) {
           lastVideoTime = video.currentTime;
-          const result = currentDetector.detectForVideo(video, performance.now());
+          let result;
+          try {
+            result = currentDetector.detectForVideo(video, performance.now());
+          } catch {
+            stopTracking();
+            setError('Hand tracking stopped after a camera or detector error. Start the camera to try again.');
+            setState('error');
+            return;
+          }
           const detectedHands = result.landmarks;
           const currentGesture = detectedHands.length
             ? classifyHandGesture(detectedHands[0])
@@ -232,11 +248,7 @@ export function HandTrackingPanel() {
       frameRef.current = requestAnimationFrame(detectFrame);
     } catch (cause) {
       if (generationRef.current !== generation) return;
-      streamRef.current?.getTracks().forEach((track) => track.stop());
-      streamRef.current = null;
-      if (videoRef.current) videoRef.current.srcObject = null;
-      detectorRef.current?.close();
-      detectorRef.current = null;
+      releaseTracking();
       setError(
         cause instanceof DOMException && cause.name === 'NotAllowedError'
           ? 'Camera permission was denied. Allow camera access in system settings, then try again.'
@@ -246,14 +258,20 @@ export function HandTrackingPanel() {
       );
       setState('error');
     }
-  }, [selectedCameraId]);
+  }, [selectedCameraId, releaseTracking, stopTracking]);
 
-  useEffect(() => () => {
-    generationRef.current += 1;
-    if (frameRef.current !== null) cancelAnimationFrame(frameRef.current);
-    detectorRef.current?.close();
-    streamRef.current?.getTracks().forEach((track) => track.stop());
-  }, []);
+  useEffect(() => {
+    const onVisibilityChange = () => {
+      if (document.hidden) stopTracking();
+    };
+    document.addEventListener('visibilitychange', onVisibilityChange);
+    window.addEventListener('pagehide', stopTracking);
+    return () => {
+      document.removeEventListener('visibilitychange', onVisibilityChange);
+      window.removeEventListener('pagehide', stopTracking);
+      releaseTracking();
+    };
+  }, [releaseTracking, stopTracking]);
 
   const updateFocusOption = (enabled: boolean) => {
     setFocusOnOpenPalm(enabled);
@@ -331,54 +349,54 @@ export function HandTrackingPanel() {
         </div>
       )}
 
-      {(state === 'active' || state === 'starting') && (
-        <div className="flex flex-col sm:flex-row items-start gap-4 mt-4">
-          <div className="relative w-full sm:w-64 aspect-video overflow-hidden rounded-lg bg-black">
-            <video
-              ref={videoRef}
-              muted
-              playsInline
-              aria-label="Live camera preview for hand tracking"
-              className="absolute inset-0 w-full h-full object-cover"
-              style={{ transform: 'scaleX(-1)' }}
-            />
-            <svg
-              aria-hidden="true"
-              viewBox="0 0 1 1"
-              preserveAspectRatio="none"
-              className="absolute inset-0 w-full h-full"
-              style={{ transform: 'scaleX(-1)' }}
-            >
-              {landmarks.map((hand, handIndex) => (
-                <g key={handIndex}>
-                  {HAND_CONNECTIONS.map(([start, end]) => (
-                    <line
-                      key={`${start}-${end}`}
-                      x1={hand[start].x}
-                      y1={hand[start].y}
-                      x2={hand[end].x}
-                      y2={hand[end].y}
-                      stroke="#34d399"
-                      strokeWidth="0.009"
-                    />
-                  ))}
-                  {hand.map((point, pointIndex) => (
-                    <circle key={pointIndex} cx={point.x} cy={point.y} r="0.014" fill="#fbbf24" />
-                  ))}
-                </g>
-              ))}
-            </svg>
-          </div>
-          <div aria-live="polite" className="flex items-center gap-2 text-xs" style={{ color: 'var(--color-text-secondary)' }}>
-            <Hand size={15} style={{ color: landmarks.length ? 'var(--color-success)' : 'var(--color-text-tertiary)' }} />
-            {state === 'starting'
-              ? 'Starting local hand tracker…'
-              : landmarks.length
-              ? `${landmarks.length} hand${landmarks.length === 1 ? '' : 's'} — ${gesture}`
-              : 'No hand detected'}
-          </div>
+      {/* Keep the ref available even when camera permission resolves before React
+          commits the starting state. An empty video never starts capture. */}
+      <div className={state === 'active' || state === 'starting' ? 'flex flex-col sm:flex-row items-start gap-4 mt-4' : 'hidden'}>
+        <div className="relative w-full sm:w-64 aspect-video overflow-hidden rounded-lg bg-black">
+          <video
+            ref={videoRef}
+            muted
+            playsInline
+            aria-label="Live camera preview for hand tracking"
+            className="absolute inset-0 w-full h-full object-cover"
+            style={{ transform: 'scaleX(-1)' }}
+          />
+          <svg
+            aria-hidden="true"
+            viewBox="0 0 1 1"
+            preserveAspectRatio="none"
+            className="absolute inset-0 w-full h-full"
+            style={{ transform: 'scaleX(-1)' }}
+          >
+            {landmarks.map((hand, handIndex) => (
+              <g key={handIndex}>
+                {HAND_CONNECTIONS.map(([start, end]) => (
+                  <line
+                    key={`${start}-${end}`}
+                    x1={hand[start].x}
+                    y1={hand[start].y}
+                    x2={hand[end].x}
+                    y2={hand[end].y}
+                    stroke="#34d399"
+                    strokeWidth="0.009"
+                  />
+                ))}
+                {hand.map((point, pointIndex) => (
+                  <circle key={pointIndex} cx={point.x} cy={point.y} r="0.014" fill="#fbbf24" />
+                ))}
+              </g>
+            ))}
+          </svg>
         </div>
-      )}
+        <div aria-live="polite" className="flex items-center gap-2 text-xs" style={{ color: 'var(--color-text-secondary)' }}>
+          <Hand size={15} style={{ color: landmarks.length ? 'var(--color-success)' : 'var(--color-text-tertiary)' }} />
+          {state === 'starting'
+            ? 'Starting local hand tracker…'
+            : landmarks.length
+            ? `${landmarks.length} hand${landmarks.length === 1 ? '' : 's'} — ${gesture}`
+            : 'No hand detected'}
+        </div>
+      </div>
 
       {state === 'error' && (
         <p role="alert" className="text-xs mt-3" style={{ color: 'var(--color-error)' }}>{error}</p>

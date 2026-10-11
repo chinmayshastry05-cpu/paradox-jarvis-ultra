@@ -143,9 +143,11 @@ actions. Do not run or wrap that script as an OpenJarvis tool.
 Microphone transcription requires the Speech-to-Text setting and a configured
 speech backend. Offline transcription requires a local backend and model; a remote
 provider can send audio off-device. Camera hand tracking is optional in
-**Settings → Hand tracking**: it asks for camera permission only when started,
-detects landmarks and basic gestures locally, and stops when stopped or when the
-settings page closes. The first camera action briefly requests permission to reveal
+**Settings → Hand tracking → Open hand tracking in chat**, or the **Hand tracking**
+button above the chat input. Opening the panel does not start capture. It detects
+landmarks and basic gestures locally, and stops when stopped, when the panel closes,
+when you leave chat, or when the app/tab is hidden. Returning does not restart the
+camera. The first camera action briefly requests permission to reveal
 camera names, then immediately stops that temporary stream. Select the intended
 device (for example, **Integrated Webcam**) from the camera list before pressing
 **Start camera**. Open palm can optionally focus the chat input; gestures never

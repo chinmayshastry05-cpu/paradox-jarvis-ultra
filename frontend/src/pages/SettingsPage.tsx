@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
+import { Link } from 'react-router';
 import {
   Palette,
   Globe,
@@ -21,7 +22,6 @@ import {
   Wifi,
 } from 'lucide-react';
 import { useAppStore, type ThemeMode } from '../lib/store';
-import { HandTrackingPanel } from '../components/HandTrackingPanel';
 import {
   checkHealth,
   fetchSpeechHealth,
@@ -942,7 +942,15 @@ export function SettingsPage() {
 
           {/* Hand tracking */}
           <Section title="Hand tracking">
-            <HandTrackingPanel />
+            <SettingRow label="Camera gestures" description="Open camera controls alongside the chat input. Camera access requires an explicit action and stops when you close the panel or leave chat.">
+              <Link
+                to="/?handTracking=1"
+                className="text-xs underline"
+                style={{ color: 'var(--color-accent)' }}
+              >
+                Open hand tracking in chat
+              </Link>
+            </SettingRow>
           </Section>
 
           {/* Data */}
