@@ -40,6 +40,7 @@ TOOL_CREDENTIALS: dict[str, list[str]] = {
         "FIRECRAWL_API_KEY",
     ],
     "get_weather": ["OPENWEATHERMAP_API_KEY"],
+    "fx_macro_data": ["FXMACRODATA_API_KEY"],
     "image_generate": ["OPENAI_API_KEY"],
     "slack": ["SLACK_BOT_TOKEN", "SLACK_APP_TOKEN"],
     "telegram": ["TELEGRAM_BOT_TOKEN"],
@@ -87,6 +88,9 @@ OPTIONAL_TOOL_CREDENTIALS: dict[str, frozenset[str]] = {
             "FIRECRAWL_API_KEY",
         }
     ),
+    # Recent USD releases, the USD calendar and every catalogue are keyless;
+    # the key unlocks other currencies, full history and FX rates.
+    "fx_macro_data": frozenset({"FXMACRODATA_API_KEY"}),
 }
 
 
