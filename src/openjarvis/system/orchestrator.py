@@ -351,6 +351,14 @@ class QueryOrchestrator:
                     from openjarvis.tools.llm_tool import LLMTool
 
                     tools.append(LLMTool(s.engine, model=s.model))
+                elif name in {"file_read", "file_write"} and ToolRegistry.contains(
+                    name
+                ):
+                    from openjarvis.tools._paths import file_tool_kwargs
+
+                    tools.append(
+                        ToolRegistry.create(name, **file_tool_kwargs(name, s.config))
+                    )
                 elif ToolRegistry.contains(name):
                     tools.append(ToolRegistry.create(name))
             except Exception as exc:
