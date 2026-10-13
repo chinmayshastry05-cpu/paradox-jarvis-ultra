@@ -185,10 +185,11 @@ def _registered_pid_alive(pid: int) -> bool:
 
 
 @contextmanager
-def _state_lock() -> Iterator[None]:
+def _state_lock(state_file: Path | None = None) -> Iterator[None]:
     """Serialize daemon bookkeeping across launching and supervised processes."""
-    _PID_FILE.parent.mkdir(parents=True, exist_ok=True)
-    with _PID_FILE.with_suffix(".lock").open("a+b") as lock:
+    path = _PID_FILE if state_file is None else state_file
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.with_suffix(".lock").open("a+b") as lock:
         if os.name == "nt":
             import msvcrt
 
@@ -477,10 +478,22 @@ def start(
 def stop() -> None:
     """Stop the running OpenJarvis server daemon."""
     console = Console(stderr=True)
+    # Stop the graphical frontend too. It is a sibling process, not a child of
+    # the daemon, so it otherwise outlives `stop` and keeps holding its port —
+    # leaving both a GUI that serves pages but fails every request, and a next
+    # `jarvis gui` that dies on "Frontend port 5173 is unavailable".
+    # Imported here rather than at module scope: gui_cmd is a sibling CLI
+    # module and only `stop` needs it.
+    from openjarvis.cli.gui_cmd import stop_frontend
+
+    frontend_pid = stop_frontend()
+    if frontend_pid is not None:
+        console.print(f"[green]Frontend stopped[/green] (PID {frontend_pid}).")
+
     pid = _read_pid()
     if pid is None:
         console.print("[yellow]No running server found.[/yellow]")
-        sys.exit(1)
+        sys.exit(0 if frontend_pid is not None else 1)
 
     # Graceful shutdown (SIGTERM / taskkill), escalating to a forced kill after
     # 10s if still running. Cross-platform — no POSIX-only os.kill/SIGKILL.

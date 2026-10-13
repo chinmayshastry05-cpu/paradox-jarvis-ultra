@@ -36,6 +36,8 @@ dependencies = [
     "openai>=1.30",
     "nvidia-ml-py>=12.560.30",
     "posthog>=3.0",
+    # Process identity and descendant cleanup for the source-checkout GUI.
+    "psutil>=5.9",
     "python-telegram-bot>=22.8",
     "rich>=13",
     "tomli>=2.0; python_version < '3.11'",
