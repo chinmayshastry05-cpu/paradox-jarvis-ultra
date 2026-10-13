@@ -414,13 +414,18 @@ def start(
     # names the parameter ``unused_start_new_session`` and ignores it. Relying
     # on it there leaves the server sharing its parent's console, so closing
     # that console — or logging off — delivers CTRL_CLOSE_EVENT and kills the
-    # daemon. DETACHED_PROCESS gives it no console at all; the new process
-    # group additionally stops a Ctrl-C in the parent reaching it.
+    # daemon. CREATE_NO_WINDOW gives it its own hidden console, which its
+    # children inherit. DETACHED_PROCESS (no console at all) is not enough for a
+    # venv install: ``jarvis.exe``/``python.exe`` there are launcher stubs that
+    # spawn the real interpreter, and that child, finding no console to inherit,
+    # allocates a NEW visible one (a terminal window) that kills the server when
+    # closed. The new process group additionally stops a Ctrl-C in the parent
+    # reaching it.
     DEFAULT_CONFIG_DIR.mkdir(parents=True, exist_ok=True)
     spawn_kwargs: dict = {}
     if sys.platform == "win32":
         spawn_kwargs["creationflags"] = (
-            subprocess.DETACHED_PROCESS | subprocess.CREATE_NEW_PROCESS_GROUP
+            subprocess.CREATE_NO_WINDOW | subprocess.CREATE_NEW_PROCESS_GROUP
         )
     else:
         spawn_kwargs["start_new_session"] = True
