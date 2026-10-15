@@ -24,6 +24,7 @@ from openjarvis.cli._voice_chat import VOICE_EXIT, record_voice, speak
 from openjarvis.memory.extractor import FactExtractor
 from openjarvis.memory.service import MemoryService
 from openjarvis.memory.store import Fact, LocalFactStore
+from openjarvis.speech.voice_state import PushToTalkStateMachine
 from openjarvis.tools.storage._stubs import RetrievalResult
 from openjarvis.tools.storage.context import build_context_message, inject_context
 
@@ -220,9 +221,11 @@ def test_memory_service_engine_failure_stores_no_partial_facts(tmp_path):
 
 
 def _voice_session_with_backend(backend):
+    # Voice branch requires session.state_machine (push-to-talk); provide a real one.
     session = SimpleNamespace(
         get_stt_backend=lambda: backend,
         get_stt_language=lambda: "kn",
+        state_machine=PushToTalkStateMachine(),
     )
     return session
 
@@ -260,6 +263,9 @@ def test_speak_with_no_backend_reports_unavailable():
     """With no healthy TTS backend, speak() reports it and returns."""
 
     class _Session:
+        # Voice branch requires session.state_machine (push-to-talk).
+        state_machine = PushToTalkStateMachine()
+
         def get_voice_preferences(self):
             return ("kokoro", "", 1.0)
 
