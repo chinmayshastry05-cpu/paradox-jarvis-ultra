@@ -32,6 +32,20 @@
 >
 > **[Roadmap](https://open-jarvis.github.io/OpenJarvis/development/roadmap/)**
 
+## Personal Build Status (this fork — NOT upstream)
+
+This is a private personal fork of upstream OpenJarvis (base: upstream commit `74694cdb`, Apache-2.0, attribution kept). It adds security, memory, MCP/browser, voice, and Indic-language work on top of upstream. **No blanket "secure" or "ready" claim is made.** The table below labels each area as implemented / tested / untested. Mocks and fixture tests do NOT count as real-model, real-audio, or real-device proof.
+
+| Area | Implemented | Tested (unit/mocked) | NOT tested / unverified |
+|---|---|---|---|
+| Security: central single-use tool confirmation, fail-closed approvals | Yes | Yes — 41 new tests + affected suites | No live desktop run; no live server end-to-end agent run (TestClient-level only). Real OS keychain backends untested (no keychain daemon in test VM). Legacy `.vault_key` migration path has no direct test. Windows ctypes backend untested. TOCTOU window between path check and file open remains (documented in code). |
+| Memory v1: SQLite+FTS5 facts, scopes, supersede/correct/delete, ranked retrieval | Yes | Yes — 125 tests incl. 100-query developer benchmark | Benchmark is developer-only, NOT proof of lifelong perfect recall. Rust-backed doc backends, cross-process writers, large-corpus ranking, JSONL→SQLite migration untested. Superseded facts' text stays in DB (status-filtered, never retrievable); only `forget` hard-deletes. |
+| MCP/browser: agentic-browser-bridge as guarded stdio server | Yes | Yes — 45 new tests + live stdio handshake + `tools/list` smoke test | No real consequential bridge call end-to-end (click/type/navigate) — refusal paths only. No navigation beyond `about:blank` snapshot. Full-repo suite not run. |
+| Voice: push-to-talk, sentence TTS, barge-in, opt-in wake word, Indic eval hooks | Yes | Yes — 46 new unit/mocked tests | No real mic/speaker, real STT/TTS models, or real audio in any language. Live-TTY barge-in mocked only. Wake word is a transcript spotter (not always-on keyword model) and NOT wired into the chat REPL. |
+| Indic QA: native-script, code-switch, names/numbers, cancellation/privacy tests | Yes (tests only) | Yes — 71 passed, 5 xfailed | No real audio/model/device tests. 5 voice-branch hook tests xfail on base. Kokoro has no Kannada/Sanskrit lang_code (falls back to American English). No explicit cancel token for in-flight extraction. |
+
+**Known caveats:** `.github/workflows/` was excluded from this fork's pushed history (GitHub token lacked `workflow` scope); CI/workflow files need restoration by someone with workflow scope. `agent ask --yes` was removed; shell is off by default; vault requires a keychain (fail-closed). Branch review: `security-confirmation`, `memory-v1`, `mcp-browser`, `voice-indic`, `indic-qa`.
+
 ## Why OpenJarvis?
 
 Personal AI agents are exploding in popularity, but nearly all of them still route intelligence through cloud APIs. Your "personal" AI continues to depend on someone else's server. At the same time, our [Intelligence Per Watt](https://www.intelligence-per-watt.ai/) research showed that local language models already handle 88.7% of single-turn chat and reasoning queries, with intelligence efficiency improving 5.3× from 2023 to 2025. The models and hardware are increasingly ready. What has been missing is the software stack to make local-first personal AI practical.
