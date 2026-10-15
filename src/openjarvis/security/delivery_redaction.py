@@ -242,6 +242,7 @@ _LITERAL_PREFIXES: tuple[str, ...] = (
     "mongodb://",
     "redis://",
     "-----BEGIN ",
+    "-----BEGIN PRIVATE KEY-----",
     "-----BEGIN RSA PRIVATE KEY-----",
     "xoxb-",
     "xoxp-",
@@ -259,6 +260,24 @@ _LITERAL_PREFIXES: tuple[str, ...] = (
 _MAX_BUFFERED = 65536
 
 
+# Assignment-style literals whose secret is ``literal + sep + quoted value``.
+# Unlike token-style literals (``sk-``, ``AKIA``, ...), whitespace does
+# NOT break an assignment: the pattern allows ``\s*`` between the
+# literal and the separator. A buffer ending with one of these literals
+# (optionally followed by whitespace) must be held while streaming —
+# the next token may supply ``=`` / ``:`` and a value, completing a
+# secret. This hold is streaming-only; flush() emits a bare literal
+# raw (it is not a secret without a value).
+_ASSIGNMENT_LITERALS: tuple[str, ...] = (
+    "password",
+    "passwd",
+    "pwd",
+    "api_key",
+    "secret_key",
+    "auth_token",
+)
+
+
 def _suspicious_start(buffer: str, *, final: bool = False) -> int:
     """Earliest index of a suffix of *buffer* that may become a secret.
 
@@ -266,8 +285,9 @@ def _suspicious_start(buffer: str, *, final: bool = False) -> int:
     suspicious when it is: a complete-pattern match ending exactly at
     the end (extendable — only while streaming, ``final=False``), a
     partial-pattern match ending at the end, or — while streaming — a
-    proper prefix of a literal pattern prefix. At ``final=True`` a
-    literal-prefix-only suffix is emitted raw: it is not a usable
+    prefix (proper or complete) of a literal pattern prefix, or an
+    assignment literal followed only by whitespace. At ``final=True``
+    a literal-prefix-only suffix is emitted raw: it is not a usable
     secret (a single char such as ``"s"``), while a strong partial
     match is replaced by a marker by :meth:`StreamingRedactor.flush`.
     """
@@ -283,11 +303,45 @@ def _suspicious_start(buffer: str, *, final: bool = False) -> int:
         if match and match.end() == end and match.start() < cut:
             cut = match.start()
     if not final:
+        # Include the complete literal (k == len(literal)): a buffer
+        # ending with exactly ``password`` must be held, because the
+        # next token may be ``= "secret"``. The old ``range(1, len)``
+        # excluded it, leaking the assignment across the split.
         for literal in _LITERAL_PREFIXES:
-            for k in range(1, len(literal)):
+            for k in range(1, len(literal) + 1):
                 if buffer.endswith(literal[:k]) and end - k < cut:
                     cut = end - k
+        # Assignment literal + trailing whitespace only (e.g. the
+        # buffer ends with ``password ``): the whitespace does not
+        # break the assignment, so the literal is still held.
+        stripped = buffer.rstrip(" \t\r\n")
+        for literal in _ASSIGNMENT_LITERALS:
+            if stripped.endswith(literal):
+                lit_start = len(stripped) - len(literal)
+                if lit_start < cut:
+                    cut = lit_start
     return cut
+
+
+# Assignment patterns whose value is an unclosed quoted string running
+# to the end of the buffer. Used to pick the suppression terminator
+# after an overlong drop: a quoted value ends only at its closing
+# quote, so whitespace inside it must NOT end suppression.
+_UNCLOSED_DOUBLE_QUOTE = re.compile(
+    r"""(?:password|passwd|pwd|api_key|secret_key|auth_token)\s*[=:]\s*"[^"]*$"""
+)
+_UNCLOSED_SINGLE_QUOTE = re.compile(
+    r"""(?:password|passwd|pwd|api_key|secret_key|auth_token)\s*[=:]\s*'[^']*$"""
+)
+
+
+def _unclosed_assignment_quote(buffer: str) -> str | None:
+    """Quote char if *buffer* ends with an unclosed quoted assignment."""
+    if _UNCLOSED_DOUBLE_QUOTE.search(buffer):
+        return '"'
+    if _UNCLOSED_SINGLE_QUOTE.search(buffer):
+        return "'"
+    return None
 
 
 class StreamingRedactor:
@@ -301,6 +355,14 @@ class StreamingRedactor:
     before any of its bytes were emitted. :meth:`flush` redacts the
     remainder, replacing a trailing strong partial-secret fragment
     with a marker. See the module docstring for the boundary.
+
+    Overlong suppression: when an oversized suspicious suffix is
+    dropped (buffer over ``_MAX_BUFFERED``), the redactor stays in
+    suppression until a safe separator — the closing quote of an
+    unclosed quoted assignment value, or else the first whitespace /
+    quote — because the secret may continue in the next feed. The
+    continuation bytes are dropped, never emitted. Memory stays
+    bounded: suppressed bytes are never buffered.
     """
 
     def __init__(self, holdback: int = 1024) -> None:
@@ -308,19 +370,51 @@ class StreamingRedactor:
         # not length-driven. The value is unused beyond the cap below.
         self._holdback = max(0, int(holdback))
         self._buffer = ""
+        self._suppressing = False
+        self._suppress_quote: str | None = None
+
+    def _consume_suppressed(self, text: str) -> str:
+        """Drop suppressed continuation bytes until a safe separator.
+
+        Returns the text after the separator (``""`` if none found —
+        the whole feed is swallowed and suppression continues).
+        """
+        if self._suppress_quote is not None:
+            idx = text.find(self._suppress_quote)
+            if idx < 0:
+                return ""
+            self._suppressing = False
+            self._suppress_quote = None
+            return text[idx + 1 :]
+        for i, ch in enumerate(text):
+            if ch in " \t\r\n\"'":
+                self._suppressing = False
+                return text[i + 1 :]
+        return ""
 
     def feed(self, text: str) -> str:
         if not isinstance(text, str) or not text:
             return ""
+        if self._suppressing:
+            text = self._consume_suppressed(text)
+            if not text:
+                return ""
         self._buffer += text
         if len(self._buffer) > _MAX_BUFFERED:
             # Bounded fail-closed: never emit an unbounded suspicious
             # suffix; drop it behind a marker instead of leaking it.
+            # Then stay in suppression: the dropped suffix may continue
+            # in the next feed, and without its prefix the continuation
+            # bytes match no pattern (they would otherwise emit raw).
             cut = _suspicious_start(self._buffer)
             buffered, self._buffer = self._buffer, ""
             emit = redact_text(buffered[:cut])
             if cut < len(buffered):
                 emit += "[REDACTED:overlong-partial-secret]"
+                self._suppressing = True
+                self._suppress_quote = _unclosed_assignment_quote(
+                    buffered[cut:]
+                )
             return emit
         cut = _suspicious_start(self._buffer)
         if cut <= 0:
@@ -329,6 +423,10 @@ class StreamingRedactor:
         return redact_text(emit)
 
     def flush(self) -> str:
+        # A suppressed tail is dropped: it is a potential secret
+        # continuation, never emitted.
+        self._suppressing = False
+        self._suppress_quote = None
         remainder, self._buffer = self._buffer, ""
         if not remainder:
             return ""

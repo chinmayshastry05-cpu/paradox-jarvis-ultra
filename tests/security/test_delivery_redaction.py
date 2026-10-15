@@ -180,3 +180,155 @@ def test_streaming_redactor_split_secret_single_char_pieces():
     joined = "".join(emitted)
     assert "sk-abcdefghij1234567890ABCD" not in joined
     assert "[REDACTED:openai_key]" in joined
+
+
+# --- Regression tests: assignment-secret leaks across exact-name splits ---
+#
+# With the scanner absent (fallback active), a two-chunk split of
+# ``password = "VALUE"`` at the exact end of the literal name leaked
+# the whole assignment: the literal-prefix loop excluded the complete
+# literal (``range(1, len)``), and the partial pattern required the
+# separator. The same held for ``api_key``. These tests cover EVERY
+# two-chunk split position and 1-character feeds for every pattern,
+# with the scanner forced off, and assert the secret VALUE never
+# appears raw.
+
+_ASSIGNMENT_EXAMPLES: tuple[tuple[str, str], ...] = (
+    ("password", "SYNTH-PW-1234-ABCD"),
+    ("passwd", "SYNTH-PW-2345-BCDE"),
+    ("pwd", "SYNTH-PW-3456-CDEF"),
+    ("api_key", "SYNTH-API-4567-DEFG"),
+    ("secret_key", "SYNTH-SK-5678-EFGH"),
+    ("auth_token", "SYNTH-AT-6789-FGHI"),
+)
+_TOKEN_EXAMPLES: tuple[tuple[str, str], ...] = (
+    ("sk-", "A" * 24),
+    ("sk-ant-", "B" * 24),
+    ("AKIA", "C" * 16),
+    ("ghp_", "d" * 36),
+    ("postgres://", "user:pass@host/dbname"),
+    ("-----BEGIN PRIVATE KEY-----", ""),
+    ("xoxb-", "e" * 12),
+    ("sk_live_", "f" * 24),
+)
+
+
+def _force_fallback(monkeypatch):
+    """Make redact_text use the pure-Python fallback (scanner absent)."""
+    import openjarvis.security.scanner as scanner_mod
+
+    class _Boom:
+        def __init__(self, *a, **k):
+            raise RuntimeError("scanner absent")
+
+    monkeypatch.setattr(scanner_mod, "SecretScanner", _Boom)
+
+
+def _assignment_text(name: str, value: str, sep: str = "=") -> str:
+    return f"prefix {name} {sep} \"{value}\" suffix"
+
+
+def test_streaming_redactor_assignment_exact_name_split(monkeypatch):
+    """Reviewer repro: split exactly after the literal name leaks."""
+    _force_fallback(monkeypatch)
+    for name, value in _ASSIGNMENT_EXAMPLES:
+        for sep in ("=", ":"):
+            text = _assignment_text(name, value, sep)
+            split = text.index(name) + len(name)
+            r = StreamingRedactor()
+            out = r.feed(text[:split]) + r.feed(text[split:]) + r.flush()
+            assert value not in out, f"{name!r} {sep!r} split leaked"
+
+
+def test_streaming_redactor_assignment_whitespace_split(monkeypatch):
+    """Literal + trailing whitespace, then separator + value: held."""
+    _force_fallback(monkeypatch)
+    for name, value in _ASSIGNMENT_EXAMPLES:
+        text = f"prefix {name}  = \"{value}\" suffix"
+        split = text.index(name) + len(name) + 2  # after the spaces
+        r = StreamingRedactor()
+        out = r.feed(text[:split]) + r.feed(text[split:]) + r.flush()
+        assert value not in out, f"{name!r} whitespace split leaked"
+
+
+def test_streaming_redactor_every_split_position(monkeypatch):
+    """Exhaustive: every two-chunk split of every pattern example."""
+    _force_fallback(monkeypatch)
+    cases: list[tuple[str, str]] = []
+    for name, value in _ASSIGNMENT_EXAMPLES:
+        cases.append((_assignment_text(name, value), value))
+    for literal, rest in _TOKEN_EXAMPLES:
+        token = literal + rest
+        cases.append((f"prefix {token} suffix", token))
+    for text, secret in cases:
+        for i in range(1, len(text)):
+            r = StreamingRedactor()
+            out = r.feed(text[:i]) + r.feed(text[i:]) + r.flush()
+            assert secret not in out, (
+                f"split at {i} of {text!r} leaked {secret!r}"
+            )
+
+
+def test_streaming_redactor_every_split_one_char_feeds(monkeypatch):
+    """Exhaustive 1-character feeds for every pattern example."""
+    _force_fallback(monkeypatch)
+    cases: list[tuple[str, str]] = []
+    for name, value in _ASSIGNMENT_EXAMPLES:
+        cases.append((_assignment_text(name, value), value))
+    for literal, rest in _TOKEN_EXAMPLES:
+        token = literal + rest
+        cases.append((f"prefix {token} suffix", token))
+    for text, secret in cases:
+        r = StreamingRedactor()
+        parts = [r.feed(ch) for ch in text]
+        parts.append(r.flush())
+        assert secret not in "".join(parts), f"1-char feeds leaked {secret!r}"
+
+
+def test_streaming_redactor_bare_literal_emitted_raw_at_flush(monkeypatch):
+    """A bare literal with no value is not a secret: no corruption."""
+    _force_fallback(monkeypatch)
+    r = StreamingRedactor()
+    out = r.feed("my password ") + r.flush()
+    assert out == "my password "
+    r = StreamingRedactor()
+    out = r.feed("note api_key") + r.flush()
+    assert out == "note api_key"
+
+
+# --- Regression tests: overlong streaming secret continuation ---
+#
+# After an oversized suspicious suffix was dropped, the redactor reset
+# its state, so continuation bytes in the next feed matched no pattern
+# and emitted raw. The redactor must stay in suppression until a safe
+# separator (closing quote of an unclosed quoted value, else the first
+# whitespace / quote).
+
+
+def test_streaming_redactor_overlong_continuation_suppressed():
+    r = StreamingRedactor()
+    seg1 = r.feed("sk-" + "A" * 66000)
+    assert "[REDACTED:overlong-partial-secret]" in seg1
+    seg2 = r.feed("A" * 100)
+    assert seg2 == "", f"continuation leaked: {seg2[:50]!r}"
+    assert r.flush() == ""
+
+
+def test_streaming_redactor_overlong_resumes_after_separator():
+    r = StreamingRedactor()
+    r.feed("sk-" + "A" * 66000)
+    out = r.feed("A" * 50 + " clean tail") + r.flush()
+    assert "clean tail" in out
+    assert "A" not in out
+
+
+def test_streaming_redactor_overlong_quoted_value_waits_for_quote():
+    """Whitespace inside a quoted value must NOT end suppression."""
+    r = StreamingRedactor()
+    r.feed('password="' + "B" * 66000)
+    # Continuation with an inner space: still suppressed (no closing quote).
+    assert r.feed("B" * 50 + " inner space") == ""
+    # Closing quote ends suppression; text after it streams.
+    out = r.feed('B" after') + r.flush()
+    assert "after" in out
+    assert "B" not in out

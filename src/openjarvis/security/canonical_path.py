@@ -459,6 +459,15 @@ def open_within(
         except OSError:
             pass
     try:
+        if expected is None and not (flags & os.O_CREAT):
+            # The walk found no file, but the open succeeded: the file
+            # appeared between the walk's stat and the open. Without
+            # O_CREAT the open should have failed, so this is a race
+            # (a swapped-in victim). Refuse without touching it — in
+            # particular, never ftruncate it.
+            raise UnsafePathError(
+                f"file {str(path)!r} appeared during open"
+            )
         if expected is not None:
             actual = os.fstat(fd)
             if (actual.st_dev, actual.st_ino) != (expected.st_dev, expected.st_ino):
@@ -521,20 +530,56 @@ def open_for_write_within(
     With ``create=True`` a missing file is created with
     ``O_CREAT | O_EXCL`` — a symlink or file appearing in between is
     refused rather than followed or truncated.
+
+    Non-destructive: the file is opened WITHOUT ``O_TRUNC`` first;
+    the descriptor is validated (dev/ino + containment) by
+    :func:`open_within`, and only then is it truncated with
+    :func:`os.ftruncate` on the verified fd. A swapped victim file is
+    therefore refused with its bytes intact — the old code passed
+    ``O_TRUNC`` into the open, so a swapped-in file was truncated to
+    ``""`` before the dev/ino check rejected it.
     """
-    flags = os.O_WRONLY | (os.O_APPEND if append else os.O_TRUNC)
+    if append:
+        # O_APPEND never truncates, so the open itself is non-destructive.
+        flags = os.O_WRONLY | os.O_APPEND
+        try:
+            return open_within(path, allowed_roots, base=base, flags=flags)
+        except FileNotFoundError:
+            if not create:
+                raise
+            return open_within(
+                path,
+                allowed_roots,
+                base=base,
+                flags=flags | os.O_CREAT | os.O_EXCL,
+                mode=0o666,
+            )
+    # Truncate path: open without O_TRUNC, validate, then ftruncate.
     try:
-        return open_within(path, allowed_roots, base=base, flags=flags)
+        fd, resolved = open_within(
+            path, allowed_roots, base=base, flags=os.O_WRONLY
+        )
     except FileNotFoundError:
         if not create:
             raise
+        # Create: O_EXCL, no O_TRUNC (a newly created file is empty;
+        # nothing to truncate, and O_EXCL refuses a raced-in file).
         return open_within(
             path,
             allowed_roots,
             base=base,
-            flags=flags | os.O_CREAT | os.O_EXCL,
+            flags=os.O_WRONLY | os.O_CREAT | os.O_EXCL,
             mode=0o666,
         )
+    try:
+        os.ftruncate(fd, 0)
+    except BaseException:
+        try:
+            os.close(fd)
+        except OSError:
+            pass
+        raise
+    return fd, resolved
 
 
 def open_rdwr_within(

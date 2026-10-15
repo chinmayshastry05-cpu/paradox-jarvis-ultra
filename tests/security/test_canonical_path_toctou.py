@@ -222,6 +222,117 @@ def test_file_write_refuses_dangling_symlink_to_outside(tmp_path: Path) -> None:
     assert outside.read_text(encoding="utf-8") == "original"
 
 
+def _swap_before_final_open(monkeypatch, target: Path, replacement: Path) -> None:
+    """Monkeypatch os.open to os.replace(replacement -> target) on the
+    first final-component open of *target*, then call the real open.
+
+    Mirrors the reviewer's injection: the swap lands immediately before
+    the final ``os.open(dir_fd=...)``. Also keeps the wrapper inside
+    ``os.supports_dir_fd`` so the descriptor-open check still passes.
+    """
+    real_open = os.open
+    calls = {"n": 0}
+
+    def swapping_open(path, flags, *args, **kwargs):
+        if (
+            isinstance(path, str)
+            and path == target.name
+            and not (flags & os.O_DIRECTORY)
+        ):
+            calls["n"] += 1
+            if calls["n"] == 1:
+                os.replace(str(replacement), str(target))
+        return real_open(path, flags, *args, **kwargs)
+
+    monkeypatch.setattr(os, "open", swapping_open)
+    monkeypatch.setattr(
+        os, "supports_dir_fd", set(os.supports_dir_fd) | {swapping_open}
+    )
+
+
+def test_write_truncate_refuses_swap_without_destroying_victim(
+    tmp_path: Path, monkeypatch
+) -> None:
+    """Destructive-TOCTOU regression: O_TRUNC must not precede validation.
+
+    The old code passed O_TRUNC into the open, so a swapped-in victim
+    file was truncated to '' before the dev/ino check rejected it.
+    The fix opens without O_TRUNC, validates, then ftruncates the
+    verified fd. The regression asserts victim bytes unchanged — not
+    merely that an exception was raised.
+    """
+    allowed = tmp_path / "allowed"
+    allowed.mkdir()
+    target = allowed / "target.txt"
+    target.write_text("original-target", encoding="utf-8")
+    replacement = tmp_path / "replacement.txt"
+    replacement.write_text("VICTIM-CONTENT", encoding="utf-8")
+    _swap_before_final_open(monkeypatch, target, replacement)
+    with pytest.raises(UnsafePathError):
+        open_for_write_within(target, [allowed])
+    assert target.read_text(encoding="utf-8") == "VICTIM-CONTENT"
+
+
+def test_write_append_refuses_swap_without_destroying_victim(
+    tmp_path: Path, monkeypatch
+) -> None:
+    allowed = tmp_path / "allowed"
+    allowed.mkdir()
+    target = allowed / "target.txt"
+    target.write_text("original-target", encoding="utf-8")
+    replacement = tmp_path / "replacement.txt"
+    replacement.write_text("VICTIM-CONTENT", encoding="utf-8")
+    _swap_before_final_open(monkeypatch, target, replacement)
+    with pytest.raises(UnsafePathError):
+        open_for_write_within(target, [allowed], append=True)
+    assert target.read_text(encoding="utf-8") == "VICTIM-CONTENT"
+
+
+def test_write_create_refuses_file_appearing_during_open(
+    tmp_path: Path, monkeypatch
+) -> None:
+    """A file appearing between walk and open is refused, not truncated.
+
+    The walk found no file (expected is None); the first O_WRONLY open
+    must fail, and the create retry must not truncate a raced-in file.
+    """
+    allowed = tmp_path / "allowed"
+    allowed.mkdir()
+    target = allowed / "new.txt"  # does not exist at walk time
+    replacement = tmp_path / "replacement.txt"
+    replacement.write_text("VICTIM-CONTENT", encoding="utf-8")
+    _swap_before_final_open(monkeypatch, target, replacement)
+    with pytest.raises(UnsafePathError):
+        open_for_write_within(target, [allowed], create=True)
+    assert target.read_text(encoding="utf-8") == "VICTIM-CONTENT"
+
+
+def test_write_unsupported_platform_refuses_without_touching_file(
+    tmp_path: Path, monkeypatch
+) -> None:
+    allowed = tmp_path / "allowed"
+    allowed.mkdir()
+    target = allowed / "f.txt"
+    target.write_text("ORIGINAL", encoding="utf-8")
+    monkeypatch.setattr(os, "supports_dir_fd", set())
+    with pytest.raises(UnsupportedPlatformError):
+        open_for_write_within(target, [allowed])
+    assert target.read_text(encoding="utf-8") == "ORIGINAL"
+
+
+def test_write_truncate_still_truncates_legitimate_file(tmp_path: Path) -> None:
+    allowed = tmp_path / "allowed"
+    allowed.mkdir()
+    target = allowed / "f.txt"
+    target.write_text("OLD-CONTENT", encoding="utf-8")
+    fd, _ = open_for_write_within(target, [allowed])
+    try:
+        os.write(fd, b"NEW")
+    finally:
+        os.close(fd)
+    assert target.read_text(encoding="utf-8") == "NEW"
+
+
 def test_apply_patch_uses_held_fd(tmp_path: Path) -> None:
     from openjarvis.tools.apply_patch import ApplyPatchTool
 
