@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import io
+import threading
 import wave
+from typing import Callable, Optional
 
 _SAMPLE_RATE = 16000
 _CHANNELS = 1
@@ -90,11 +92,21 @@ def _frames_to_wav(frames: list[bytes], sample_rate: int) -> bytes:
     return buf.getvalue()
 
 
-def play_wav(audio: bytes, sample_rate: int = 24000) -> None:
+def play_wav(
+    audio: bytes,
+    sample_rate: int = 24000,
+    *,
+    should_stop: Optional[Callable[[], bool]] = None,
+) -> None:
     """Play raw WAV bytes through the default output device.
 
     If the bytes are a valid WAV file, sample rate is read from the header;
     otherwise ``sample_rate`` is used as a fallback.
+
+    ``should_stop`` (barge-in) is polled on a watcher thread: when it turns
+    true, ``sd.stop()`` halts playback and ``sd.wait()`` returns. The watcher
+    never stops playback from the audio thread itself — it only signals the
+    sounddevice stream, which is the documented way to interrupt ``wait``.
     """
     try:
         import numpy as np
@@ -120,7 +132,26 @@ def play_wav(audio: bytes, sample_rate: int = 24000) -> None:
         sr = sample_rate
 
     sd.play(data, sr)
-    sd.wait()
+    if should_stop is None:
+        sd.wait()
+        return
+    stop_watcher = threading.Event()
+    stop = getattr(sd, "stop", None)
+
+    def _watch() -> None:
+        while not stop_watcher.is_set():
+            if should_stop():
+                if callable(stop):
+                    stop()
+                return
+            stop_watcher.wait(0.02)
+
+    watcher = threading.Thread(target=_watch, daemon=True)
+    watcher.start()
+    try:
+        sd.wait()
+    finally:
+        stop_watcher.set()
 
 
 __all__ = ["play_wav", "record_until_silence"]
