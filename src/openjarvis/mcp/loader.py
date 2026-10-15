@@ -134,6 +134,18 @@ def load_mcp_tools_from_config(
                 discovered = [t for t in discovered if t.spec.name not in exclude_tools]
             if allowed_names:
                 discovered = [t for t in discovered if t.spec.name in allowed_names]
+            # Bridge tools get the secure-profile guard: allowlist +
+            # per-origin + confirmation. The caller's --tools list
+            # counts as an explicit opt-in for consequential tools.
+            from openjarvis.mcp.browser_bridge import (
+                BRIDGE_SERVER_NAME,
+                apply_bridge_guard,
+            )
+
+            if name == BRIDGE_SERVER_NAME:
+                discovered = apply_bridge_guard(
+                    discovered, cfg=cfg, explicit_tools=allowed_names
+                )
 
             tools.extend(discovered)
             logger.info(

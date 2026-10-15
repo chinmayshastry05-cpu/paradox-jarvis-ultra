@@ -246,6 +246,7 @@ def test_builder_wires_security_context_into_internal_mcp_server() -> None:
         rate_limiter=limiter,
         agent_id="system:mcp",
         allowed_dirs=["/sandbox"],
+        include_browser_tools=False,
     )
 
 

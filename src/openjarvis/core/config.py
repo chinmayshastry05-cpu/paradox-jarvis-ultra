@@ -2318,6 +2318,15 @@ max_facts = 1000              # cap on stored facts
 [tools.mcp]
 enabled = true
 
+# Agentic Browser Bridge (local-first browser automation via MCP stdio).
+# Build the entry with openjarvis.mcp.browser_bridge.bridge_server_entry()
+# and put the resulting dict in `servers` below. The bridge checkout
+# path is configurable: pass bridge_path, set OPENJARVIS_BRIDGE_PATH,
+# or use the default ~/agentic-browser-bridge. Secure profile: only
+# the read-only + reversible tools load by default; navigation is
+# restricted to allowed_origins; consequential tools need operator
+# confirmation.
+
 # [tools.browser]
 # headless = true
 # timeout_ms = 30000
