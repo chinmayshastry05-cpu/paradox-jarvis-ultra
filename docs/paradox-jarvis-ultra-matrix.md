@@ -1,27 +1,26 @@
 # Paradox Jarvis Ultra — All-Repos Feature / License / Gap Matrix
 
-> Research-only document. No code was pushed to GitHub. The checkout at
-> `~/workspace/openjarvis-merge` was NOT modified (read-only inspection).
-> No "secure" or "ready" claim is made. No paid service is proposed.
-> No code is proposed to be copied across incompatible licenses.
+> User-facing matrix. No "secure" or "ready" claim. No paid service is
+> proposed. No code is proposed to be copied across incompatible licenses.
 
 - **Date:** 2026-10-15 (IST)
-- **Method:** Read actual `LICENSE` files, `package.json` / `pyproject.toml`
-  license fields, README/docs, and source files in local checkouts; checked
-  public GitHub API license endpoints (no auth, metadata only) for upstream
-  repos. Claims taken from a README are labelled **README-claim**, not
-  re-verified by running tests here.
-- **Delivered inventory:** Searched `~/workspace` (maxdepth 3) for
-  `*inventory*`, `*paradox*jarvis*`, `*jarvis*ultra*`. **No delivered-inventory
-  file was found.** This matrix is therefore built from source evidence, not
-  from any prior inventory or message claims.
-- **Status vocabulary used below:**
-  - **IMPLEMENTED** — code exists in the inspected checkout.
+- **Method:** Read actual `LICENSE` files / GitHub API license endpoints,
+  repo descriptions, READMEs, and source files. Claims taken from a README
+  are labelled **README-claim**, not re-verified by running tests here.
+- **Delivered inventory:** All 25 entries below reconcile the inventory
+  delivered in the KRS scope-expansion mail (exact owner/repo pairs;
+  URLs follow those pairs exactly). No entry is omitted. Entries that
+  could not be verified are marked UNVERIFIED, not assumed.
+- **Status vocabulary:**
+  - **IMPLEMENTED** — code exists in the fork and is tested.
   - **PLUGIN PLAN** — reachable only via an existing resolver / external
-    process / config opt-in, with no code copied into the fork.
+    process / config opt-in, with no code copied into the fork. A plugin
+    plan does **NOT** close a gap.
   - **BLOCKED / UNTESTED** — no code, no live run, or a missing dependency.
   - **UNVERIFIED** — license or feature could not be confirmed from actual
-    source in this pass. Do not treat as present.
+    source. Do not treat as present.
+  - **GAP: OPEN** — the capability is missing. It stays OPEN until it is
+    implemented **and** tested. A plugin-plan cell never marks a gap closed.
 
 ---
 
@@ -30,217 +29,263 @@
 Attribution must be preserved wherever code, skills, or text is reused.
 Apache-2.0 and MIT are permissive and mutually compatible for *linking /
 depending* with attribution kept; that does **not** authorise copying
-source-available or unlicensed code into the fork.
+source-available or unlicensed code into the fork. **No license = no
+permission to reuse. Unknown license is a copying blocker, not permission.**
 
-| Repo / system | License (verified) | Evidence | Reuse rule for Paradox Jarvis Ultra |
+| Repo | URL | License (verified) | Reuse rule for Paradox Jarvis Ultra |
 |---|---|---|---|
-| Upstream OpenJarvis (`open-jarvis/OpenJarvis`) | **Apache-2.0**, Copyright 2025 The OpenJarvis Authors | Local `LICENSE` in `openjarvis-merge` (full Apache-2.0 text + copyright line); GitHub API: `Apache-2.0`; `pyproject.toml` `license = {text = "Apache-2.0"}` | Base of the fork. Keep LICENSE + attribution + history. |
-| Paradox Jarvis Ultra fork (`chinmayshastry05-cpu/paradox-jarvis-ultra`, PRIVATE) | **Apache-2.0** (inherited) | Local checkout `openjarvis-merge` LICENSE = Apache-2.0; README states base = upstream commit `74694cdb`, attribution kept; `git remote` = `chinmayshastry05-cpu/paradox-jarvis-ultra.git` | Private personal fork. Do not strip upstream attribution. Private repo license not checkable via public API (expected 404/denied) — local LICENSE governs. |
-| `openjarvis-mcp-browser` local checkout | **Apache-2.0** | Local LICENSE (Apache-2.0); `pyproject.toml` Apache-2.0 | Earlier branch snapshot of `openjarvis-personal` (remote `chinmayshastry05-cpu/openjarvis-personal`), head `f99f2a6` (bridge MCP integration). Same upstream lineage — do NOT treat as a separate project or re-license. |
-| `openjarvis-security-job` local checkout | **Apache-2.0** | Local LICENSE (Apache-2.0); `pyproject.toml` Apache-2.0 | Earlier branch snapshot of `openjarvis-personal`, head `0d011db8` (confirmation/keychain/shell work). Same lineage as above. |
-| Hermes Agent (`NousResearch/hermes-agent`) | **MIT** | GitHub API: `MIT` | **Do NOT copy Hermes source into the fork.** Use only via the existing `HermesResolver` (git-cache skill import, see §2) or as a side-by-side process. Keep Hermes copyright/attribution on any skill text reused. |
-| Local `~/workspace/hermes-agent` | **UNVERIFIED (no LICENSE present)** | Directory contains **only `install.sh`** — no LICENSE, no `skills/`, no agent source | Nothing in this local dir proves Hermes features. Feature claims below rest on `install.sh` + OpenJarvis resolver code only. |
-| Agentic Browser Bridge (`chinmayshastry05-cpu/agentic-browser-bridge`) | **MIT**, Copyright (c) 2026 chinmayshastry05-cpu | Local LICENSE (MIT) + `package.json` `"license": "MIT"`; GitHub API: `MIT` | Talk to it as an **external MCP stdio server** (`src/openjarvis/mcp/browser_bridge.py`). Never import bridge code in-process. Keep MIT notice. |
-| Cua (`trycua/cua`, local `~/workspace/cua`) | **MIT**, Copyright (c) 2025 Cua AI, Inc. | Local `LICENSE.md` (MIT) | Candidate **external** computer-use plugin only (see §2). Do NOT vendor Cua code into the fork without keeping its LICENSE/attribution, and do NOT assume Cua Spaces cloud = free. |
-| StudyReels (`chinmayshastry05-cpu/studyreels`) | **UNVERIFIED — no LICENSE file found** | No `LICENSE` locally; GitHub license endpoint returned 404 (no detected license) | **Do NOT copy StudyReels code into Jarvis.** No license = no permission to reuse. Treat as separate, unlicensed project. |
-| Cactus (used by StudyReels via `third_party/cactus`) | **Source-available, NOT OSI open source** (README-stated) | StudyReels `README.md` NOTICE: free grant for individuals / education / non-commercial / orgs under $2M funding AND under $2M revenue; commercial licence otherwise; `third_party/cactus/LICENSE` cited but **not** independently opened in this pass | **Do NOT copy the Cactus binding or engine into Jarvis.** If Jarvis ever needs on-device LLM via Cactus, it must be a separate, explicitly licensed integration with the NOTICE + LICENSE intact — not assumed. |
-| Paradox Clipper Pro (`chinmayshastry05-cpu/paradox-clipper-pro`) | **MIT** | GitHub API: `MIT` | Out of Jarvis scope; listed only because it shares the owner. No copying proposed. |
-| `paradox-agent`, `risklabs`, `tally-llm`, `blockads-apk`, `clientops-ai-demo`, `morphe-microg-apk` (GitHub user `chinmayshastry05-cpu`) | **UNVERIFIED — no license detected** | GitHub license endpoint 404 for `paradox-agent` / `studyreels`; public repo list shows `license: null` for the rest | Do NOT copy code from these into Jarvis. No license = no reuse permission. |
-| OpenClaw skills (`openclaw/skills`) | **UNVERIFIED** | OpenJarvis resolver points at `https://github.com/openclaw/skills.git`; GitHub API lookup returned 404 in this pass | Resolver may fetch at runtime; do NOT vendor OpenClaw skill text into the fork. Per-skill licences (if any) must be checked before reuse. |
-| Dependency licences (Kokoro, faster-whisper, Deepgram SDK, Cartesia, OpenAI SDK, Tavily, `python-telegram-bot`, Playwright, etc.) | **UNVERIFIED in this pass** | Not opened per-package | Do NOT assert a dependency's licence. Check each package's own LICENSE before redistributing or vendoring. |
-| `brag_skill`, `geo-sleuth`, `oj-mem-delivery` (local dirs) | MIT / MIT / Apache-2.0 respectively (local LICENSE files) | Local LICENSE reads | Not part of Jarvis; no reuse proposed. Listed only to avoid confusion with similarly named local dirs. |
+| Upstream OpenJarvis | https://github.com/open-jarvis/openjarvis | **Apache-2.0** | Base of the fork. Keep LICENSE + attribution + history. |
+| Paradox Jarvis Ultra fork (PRIVATE) | https://github.com/chinmayshastry05-cpu/paradox-jarvis-ultra | **Apache-2.0** (inherited) | Private personal fork. Do not strip upstream attribution. |
+| Cactus | https://github.com/cactus-compute/cactus | **Source-available, NOT OSI open source** (project NOTICE; GitHub license: Other/NOASSERTION) | **Do NOT copy** Cactus engine/binding into Jarvis. A Cactus integration must be separate, explicitly licensed, with NOTICE + LICENSE intact — not assumed. |
+| Open-Higgsfield-AI | https://github.com/Autom8AI/Open-Higgsfield-AI | **UNVERIFIED** — description claims MIT, but GitHub license endpoint returned null (no LICENSE file detected) | **Do NOT copy.** Description claim ≠ verified license. |
+| Ponytail | https://github.com/dietrichgebert/ponytail | **MIT** | Prompt-only coding guidance. May be *followed* as a working rule (it is guidance, not code to vendor). Keep attribution if quoted. |
+| Hermes Gadget SDK | https://github.com/Adolanium/hermes-gadget-sdk | **MIT** | External Hermes-ecosystem SDK (voice/text devices). Do NOT vendor into the fork. |
+| Herald-OS | https://github.com/iamlukethedev/Herald-OS | **MIT** | An OS project, not a Jarvis feature. Do NOT copy. Independent project, not affiliated with Nous Research. |
+| Octop | https://github.com/TencentCloud/Octop | **MIT** | A competing self-hosted assistant. Reference only. Do NOT copy. |
+| VoxCPM | https://github.com/OpenBMB/VoxCPM | **Apache-2.0** | TTS model (see §2). Model weights / GPU required. Do NOT assume free local use without checking model terms. |
+| Cua | https://github.com/trycua/cua | **MIT** | Candidate **external** computer-use plugin only. Do NOT vendor Cua code into the fork. Do NOT assume Cua Spaces cloud = free. |
+| Rea | https://github.com/morluto/rea | **MIT** | Reverse-engineering agent tool. Unrelated to assistant features. Do NOT copy. |
+| Awesome Free LLM APIs | https://github.com/mnfst/awesome-free-llm-apis | **CC0-1.0** (list) | A list, not code. Listed services have their own terms/keys. Do NOT treat "free" as verified. |
+| Oh My Hermes | https://github.com/rlaope/oh-my-hermes | **MIT** | Hermes plugin (coding intelligence, memory, workflows). External plugin only. Do NOT vendor. |
+| Geo Sleuth | https://github.com/Oldcircle/geo-sleuth | **MIT** | Photo-geolocation agent skill. External skill only. Privacy-sensitive — must be gated if ever used. Do NOT vendor. |
+| OpenDroid | https://github.com/yashab-cyber/opendroid | **UNVERIFIED — no license detected** (GitHub: NOASSERTION) | **Do NOT copy.** No license = no reuse permission. |
+| Gods Eye View | https://github.com/bilawalsidhu/gods-eye-view | **UNVERIFIED — no license detected** (GitHub: NOASSERTION) | **Do NOT copy.** A globe/visualization demo, unrelated to assistant features. |
+| OpenMontage | https://github.com/calesthio/OpenMontage | **AGPL-3.0** | **Do NOT copy or link into the Apache-2.0 fork** without a licensing decision. AGPL + Apache mixing needs an explicit decision first. Do not silently mix. |
+| Open Generative AI | https://github.com/Anil-matcha/Open-Generative-AI | **MIT** (GitHub API) | Image/video generation studio. Backends are MuAPI frontends — **paid/key-gated; "free" is NOT verified**. "No content filters / unrestricted" is a safety flag, not a feature to adopt. Do NOT assume free generation. |
+| Hermes Agent | https://github.com/NousResearch/hermes-agent | **MIT** | **Do NOT copy Hermes source into the fork.** Use only via the existing `HermesResolver` or as a side-by-side process. Keep attribution on reused skill text. |
+| Claude Code Router | https://github.com/musistudio/claude-code-router | **MIT** | Multi-model routing control plane. Reference / external only. Do NOT vendor. |
+| Agentic Browser Bridge | https://github.com/chinmayshastry05-cpu/agentic-browser-bridge | **MIT** | Talk to it as an **external MCP stdio server**. Never import bridge code in-process. Keep MIT notice. |
+| StudyReels | https://github.com/chinmayshastry05-cpu/studyreels | **UNVERIFIED — no license detected** | **Do NOT copy** StudyReels code into Jarvis. Separate, unlicensed project. |
+| Tally LLM | https://github.com/chinmayshastry05-cpu/tally-llm | **UNVERIFIED — no license detected** | **Do NOT copy.** Separate research prototype. Tally work stays separate. |
+| ClientOps AI Demo | https://github.com/chinmayshastry05-cpu/clientops-ai-demo | **UNVERIFIED — no license detected** | **Do NOT copy.** Triage-assistant demo (fictional data). |
+| RiskLabs | https://github.com/chinmayshastry05-cpu/risklabs | **UNVERIFIED — no license detected** | **Do NOT copy.** College academic project, separate. |
+| First Role Radar | https://github.com/ChinmaysTG/first-role-radar | **UNVERIFIED — no license detected** | **Do NOT copy.** Job-research tool (SerpApi, key-gated). |
+| OpenClaw skills | https://github.com/openclaw/skills | **UNVERIFIED** | Resolver may fetch at runtime; do NOT vendor skill text into the fork. Per-skill licences must be checked before reuse. |
+| Dependency licences (Kokoro, faster-whisper, Deepgram SDK, Cartesia, OpenAI SDK, Tavily, `python-telegram-bot`, Playwright, etc.) | — | **UNVERIFIED** | Do NOT assert a dependency's licence. Check each package's own LICENSE before redistributing or vendoring. |
 
-**Compatibility holds enforced in this matrix:**
-- Apache-2.0 (OpenJarvis) + MIT (Hermes, Bridge, Cua) — permissive pair;
-  dependency / external-process use with attribution is the safe shape.
-  Copying is still avoided: resolvers and MCP stdio keep the boundary.
-- Source-available Cactus and unlicensed repos — **no copying proposed.**
-- Paid/cloud services — **no paid service proposed** anywhere in this matrix.
-  Cloud-gated paths are marked as such and stay opt-in / off by default.
+**Compatibility holds:**
+- Apache-2.0 (OpenJarvis, VoxCPM) + MIT (Hermes, Bridge, Cua, Ponytail,
+  Gadget SDK, Herald-OS, Octop, Rea, Oh My Hermes, Geo Sleuth, Open
+  Generative AI, Claude Code Router) — permissive pair; dependency /
+  external-process use with attribution is the safe shape. Copying is
+  still avoided: resolvers and MCP stdio keep the boundary.
+- AGPL-3.0 (OpenMontage) — **no copying/linking into Apache-2.0** without
+  an explicit licensing decision.
+- Source-available Cactus and unlicensed repos — **no copying.**
+- Paid/cloud services — **no paid service proposed.** Cloud-gated paths
+  stay opt-in / off by default.
 
 ---
 
-## 2. Feature matrix
+## 2. Feature matrix (all 25 delivered entries)
 
-Columns: **Implemented** = code in `openjarvis-merge` (the Paradox fork
-checkout). **Plugin plan** = reachable via an existing resolver / external
-process / config, without copying code. **Blocked / Untested** = missing,
-untested live, or gated.
+For each entry: **useful assistant feature** (if any) vs **unrelated /
+domain project**; what OpenJarvis already has; what is missing; how it
+would integrate (if at all); gap status. A plugin-plan cell never closes
+a gap.
 
-### 2a. Hermes features
+### 2a. Base + Hermes ecosystem
 
-| Feature | Implemented | Plugin plan (no copy) | Blocked / Untested | License / cost gate | Evidence |
+| Repo | Useful assistant feature / unrelated | OpenJarvis already has | Missing / gap | Integration method | Gap status |
 |---|---|---|---|---|---|
-| Hermes skill import (~150 skills — README-claim, count UNVERIFIED) | YES — resolver code | `HermesResolver` (`src/openjarvis/skills/sources/hermes.py`): git-caches `NousResearch/hermes-agent`, walks `skills/<category>/<skill>/SKILL.md`, reads frontmatter only | Skill *contents* never executed/verified here; per-skill licences unchecked | Hermes MIT; keep attribution on reused skill text | `skills/sources/hermes.py`; README `jarvis skill install hermes:arxiv` |
-| Hermes eval runner / comparison | YES — runner code | `src/openjarvis/evals/backends/external/hermes_agent.py`, `_runners/hermes_runner.py` | Requires `HERMES_AGENT_PATH`-style external checkout; `live_external` pytest marker = spawns real foreign subprocesses — not run here | MIT (external process) | Eval backend files; `pyproject.toml` pytest markers |
-| Hermes gateway service | NO | Side-by-side only: local `hermes-agent/install.sh` stages include `gateway` (`hermes gateway install --if-missing`), skipped when non-interactive | **UNTESTED** — no gateway configured/verified in this pass; no gateway code in the fork | MIT; no spend proposed | `~/workspace/hermes-agent/install.sh` stages `prerequisites repository venv python-deps config products setup gateway complete` |
-| Hermes package manager (`hermes pm`), products, desktop app | NO | Side-by-side only: `install.sh` references `hermes pm install`, products stage, `--include-desktop` | **UNVERIFIED** — only `install.sh` present locally; no Hermes source to confirm behaviour | MIT; no spend proposed | `install.sh` (`pm_args`, `--include-desktop`, `--skip-browser`, `--skip-computer-use`) |
-| Hermes browser tools (agent-browser + Chromium) | NO in fork | Side-by-side only via Hermes `pm install agent-browser` | **UNTESTED**; Jarvis side already has its own guarded bridge (see §2c) — do not run two browser drivers against one profile | MIT | `install.sh` `--skip-browser` |
-| Hermes computer-use driver (`cua-driver`) | NO in fork | Side-by-side only via Hermes `pm install cua-driver` / `--without cua-driver` | **UNTESTED**; see §2c for the gated system-control plan | Cua MIT (see §1); no vendoring | `install.sh` `--skip-computer-use` |
+| OpenJarvis (upstream) | Base assistant: CLI/server/desktop, agents, skills, tools, channels, connectors, memory, scheduler | Fork base (all upstream features as starting point) | Fork additions are in §3; upstream gaps (e.g. live-tested voice, keychain) remain | Fork (Apache-2.0, attribution kept) | — |
+| Hermes Agent | Skill library (~150 skills, README-claim) + eval runner + gateway service (side-by-side) | Resolver code (`HermesResolver` walks `skills/<category>/<skill>/SKILL.md`, frontmatter only); eval-runner code | No verified end-to-end Hermes↔Jarvis integration test; gateway not configured/verified; skill contents never executed/verified; per-skill licences unchecked | Resolver / external process only; **do NOT copy source** | **GAP: OPEN** — integration test + live gateway verification |
+| Hermes Gadget SDK | Voice/text device SDK (ESP32 firmware, Linux client, desktop simulator) for Hermes Agent | None (no device SDK in fork) | No device support; no ESP32/Linux-client integration | External Hermes-ecosystem SDK; **do NOT vendor** | **GAP: OPEN** — no device integration |
+| Oh My Hermes | Hermes plugin: coding intelligence, long-term memory, model-optimized workflows | None of this plugin's features in fork | No plugin integration; memory-v1 in fork is separate (SQLite+FTS5, not this plugin) | External plugin only; **do NOT vendor** | **GAP: OPEN** — no plugin integration |
+| Herald-OS | **Unrelated** — an agent-native OS with Hermes as interface | None (Jarvis is an app, not an OS) | Nothing to integrate; an OS is out of scope | None | N/A (unrelated domain) |
+| Ponytail | Coding-guidance prompt ("laziest senior dev"): smallest complete change, no extra features | Followed as a working rule for coding tasks | Nothing to integrate (guidance, not code) | Follow as guidance; keep attribution if quoted | N/A (guidance, not a feature) |
 
-**Gap:** There is no verified, end-to-end Hermes↔Jarvis integration test in
-this pass. Hermes is a *neighbour system + skill source*, not a merged
-component. Do not claim "Hermes features work in Jarvis" beyond the resolver
-+ eval-runner code above.
+### 2b. Voice / TTS
 
-### 2b. Telegram owner-only gateway
-
-| Feature | Implemented | Plugin plan | Blocked / Untested | License / cost gate | Evidence |
+| Repo | Useful assistant feature / unrelated | OpenJarvis already has | Missing / gap | Integration method | Gap status |
 |---|---|---|---|---|---|
-| Telegram Bot API channel (send + long-poll receive) | YES — code | — | **UNTESTED live** — no bot token, no live send/receive run in this pass | Free Bot API; token is a secret — never in chat/logs | `src/openjarvis/channels/telegram.py` (`TelegramChannel`, `ChannelRegistry.register("telegram")`); `pyproject.toml` extra `channel-telegram = ["python-telegram-bot>=21.0"]` |
-| Owner-only allowlist | YES — code | Set `allowed_chat_ids` (comma-separated chat IDs); `_poll_loop` drops messages from unlisted chats | **UNTESTED live** — allowlist enforcement is code-read, not live-proven; a misconfigured/empty allowlist must be treated as **not owner-only** | Config-gated | `telegram.py`: `_allowed_chat_ids` + allowlist check in `_handle_msg`; `drop_pending_updates=True` |
-| Channels disabled by default | YES — docs + config contract | Enable per-channel in config only after credentials + allowlist are set | — | — | `docs/user-guide/channels.md`: "`[channel]` defaults to `enabled = false`" |
-| Telegram user-account (MTProto / userbot) access | NO | **None proposed** | **BLOCKED** — no MTProto client in code; Bot API only. Do not add a userbot. | — | Grep: only Bot API (`api.telegram.org/bot…`) in `telegram.py` |
-| Single-use approval for consequential Telegram-triggered actions | YES — central gate (see §2f) | Telegram handlers go through the same `ConfirmationGate` as other tools | Live Telegram→approval round-trip **UNTESTED** | — | `src/openjarvis/security/confirmation.py` |
+| VoxCPM | TTS model: tokenizer-free multilingual speech generation, voice cloning | Voice profiles + Kokoro backend + faster-whisper/Deepgram/OpenAI-Whisper backends (see §2e) | **No verified local TTS for Kannada or Sanskrit**; VoxCPM is a model requiring weights + GPU; no integration, no real-audio test | External model only (if ever); **do NOT assume free local use**; needs explicit licensing/model-terms check + GPU | **GAP: OPEN** — Kannada/Sanskrit local TTS missing; VoxCPM not integrated or tested |
+| OpenJarvis voice (fork additions) | Push-to-talk state machine, sentence TTS, barge-in, opt-in wake word, Indic WER hooks | Code: `speech/voice_state.py`, `voice_io.py`, `_voice_chat.py`, `indic.py` | Real mic/speaker/model/audio test in **none** of the four languages; live-TTY barge-in mocked only; wake word is a transcript spotter, **not wired into chat REPL**; Kokoro has no Kannada/Sanskrit `lang_code` | Code in fork; real-audio tests are a separate, unauthorised step | **GAP: OPEN** — no real-audio verification in any language |
 
-**Gap / required before use:** Set exactly one owner chat ID in
-`allowed_chat_ids`, verify with a live send/receive test from that chat only,
-and confirm non-allowlisted chats are ignored. Until that live test exists,
-"owner-only gateway" is code-present, not proven.
+Four-language voice detail (profiles in `speech/indic.py`):
+- English: STT forwarded-untested; TTS Kokoro `af_heart` pipeline-untested.
+- Hindi: STT forwarded-untested; TTS Kokoro `lang_code="h"` but **no curated voice ID** — pipeline-untested.
+- Kannada: STT forwarded-untested; TTS **NO local pipeline** (Kokoro has no Kannada pipeline).
+- Sanskrit: STT forwarded-untested (whether Whisper handles Sanskrit is UNVERIFIED); TTS **NO local pipeline**.
+- Cloud TTS/STT (Deepgram, Cartesia, OpenAI) — backend code, key-gated, **UNTESTED**; **no paid/cloud TTS proposed**.
 
-### 2c. Optional gated system / Android control
+### 2c. System / Android / GUI control
 
-| Feature | Implemented | Plugin plan (gated, opt-in) | Blocked / Untested | License / cost gate | Evidence |
+| Repo | Useful assistant feature / unrelated | OpenJarvis already has | Missing / gap | Integration method | Gap status |
 |---|---|---|---|---|---|
-| Shell execution | YES — code, **OFF by default** | Opt-in only: `OPENJARVIS_SHELL_ENABLED=1` or `security.shell_enabled = true`, **plus** single-use argument-bound approval per call; sanitised env; 100 KB/stream cap; 300 s max | Live shell run **UNTESTED** here; `agent ask --yes` removed per README | Free / local; fail-closed | `src/openjarvis/tools/shell_exec.py` (`SHELL_OPT_IN_ENV_VAR`, `requires_confirmation=True` per docstring) |
-| Full system access preset | YES — example config only | `configs/openjarvis/examples/full-system-access.toml` (shell + file read/write + patch + interpreter) — header warns: no allowlist/denylist/workdir restriction | **UNTESTED**; must never be the default | — | That file, verbatim warning |
-| Container-scoped shell | YES — code | `docker_shell_exec`: runs only in the active TB v2.1 task container; refuses with no active container; explicitly not a host-shell alternative | Docker runtime **UNTESTED** here | — | `src/openjarvis/tools/docker_shell_exec.py` |
-| Sandboxed Python execution | YES — code | `code_interpreter`: AST allowlist (`json`, `math`, `time` only), blocked `eval/exec/open/getattr…`, isolated child `-I -B -S`, resource limits; Docker boundary is the real containment per docstring | Live run **UNTESTED** here | — | `src/openjarvis/tools/code_interpreter.py` |
-| Capability RBAC (`file:read/write`, `network:fetch`, `code:execute`, `channel:send`, `system:admin`, …) | YES — code | `CapabilityPolicy` with `default_deny` option; default is open unless `default_deny=True` | Policy-file live enforcement **UNTESTED** here; default-open is a risk if relied on without `default_deny` | — | `src/openjarvis/security/capabilities.py` |
-| Native GUI automation (pyautogui / xdotool / UIAutomation / Accessibility) | NO | **None in-repo** | **BLOCKED / NO CODE** — grep of `src/openjarvis/tools` found no GUI-automation driver | — | Grep: `cua|computer-use|pyautogui|xdotool|uiautomation` → no hits in tools |
-| Android control (ADB / Termux / Android app / AndroidManifest / Kotlin / Flutter in Jarvis) | NO | **None in-repo** | **BLOCKED / NO CODE** — grep found only incidental matches (e.g. "Android" inside unrelated text / SMS docs). No ADB, no device bridge, no Android APK in the Jarvis fork | — | Grep across `src/` + `docs/`; StudyReels (Flutter/Android) is a **separate, unlicensed** project — do NOT copy its Android code into Jarvis |
-| Android / desktop control via external Cua Driver | NO in fork | **Plugin plan only:** run Cua Driver as an external process (as Hermes `cua-driver` does), behind the same opt-in + single-use approval gate as `shell_exec`; never vendored | **UNTESTED** — no integration code, no live device run; Cua Spaces cloud path is NOT proposed | Cua MIT; keep attribution; no paid/cloud path proposed | Local `~/workspace/cua/README.md` (Spaces / Driver / Lume / CUA-S1); Hermes `install.sh` `cua-driver` reference |
+| Cua | Computer-use (GUI automation driver, Spaces, Lume, CUA-S1) | None in fork (no GUI-automation driver) | No GUI automation; no Cua integration | **External plugin only** (as Hermes `cua-driver` does), behind opt-in + per-action approval; **never vendored**; Cua Spaces cloud NOT proposed | **GAP: OPEN** — no GUI automation |
+| OpenDroid | Android agent (accessibility-driven screen automation, self-planning) | None in fork (no Android control, no ADB) | No Android control; no integration. **No license** blocks copying in any case | None (unlicensed — do NOT copy). A future Android plugin would need a licensed, explicitly approved design | **GAP: OPEN** — no Android control |
+| Jarvis gated system control (fork) | Shell (OFF by default), container shell, sandboxed Python (AST allowlist), capability RBAC | Code: `shell_exec.py`, `docker_shell_exec.py`, `code_interpreter.py`, `capabilities.py` | Live shell run UNTESTED; policy-file live enforcement UNTESTED; default-open capability policy is a risk without `default_deny` | Code in fork; gated (opt-in + per-action single-use approval) | **GAP: OPEN** — live enforcement untested |
 
-**Gap:** "System/Android control" in Paradox Jarvis Ultra today = **gated
-local shell + container shell only**. There is no Android control and no GUI
-automation. Any such control must arrive as a new, explicitly gated plugin
-(external process + opt-in + per-action approval), not by copying Cua /
-StudyReels code into the fork.
+### 2d. Video / image generation
 
-### 2d. Connectors
-
-Counts from file listing: **41 connector modules** in
-`src/openjarvis/connectors/`, **34 channel modules** in
-`src/openjarvis/channels/`, **43 tool modules** in `src/openjarvis/tools/`.
-Code-present ≠ live-verified: no OAuth / live credential run was done here.
-
-| Connector group | Implemented (code) | Plugin plan / gating | Blocked / Untested | License / cost gate | Evidence |
+| Repo | Useful assistant feature / unrelated | OpenJarvis already has | Missing / gap | Integration method | Gap status |
 |---|---|---|---|---|---|
-| Google: Gmail, Drive, Calendar, Contacts, Tasks (`gcalendar`, `gdrive`, `gmail`, `gmail_imap`, `gcontacts`, `google_tasks`, `google_auth`, `oauth`) | YES | OAuth via `google_auth` / `oauth.py`; one OAuth covers Gmail/Calendar/Tasks per README preset | Live OAuth + live reads **UNTESTED** | Free Google APIs; OAuth secrets — never in chat | `src/openjarvis/connectors/*.py`; README `jarvis connect gdrive` |
-| Apple: Calendar, Contacts, Health, Music, Notes (`apple_*`) | YES | Local Apple APIs / CLI | Live macOS run **UNTESTED** | Apple platform-gated | `src/openjarvis/connectors/apple_*.py` |
-| Messaging / channels (27 documented in `docs/user-guide/channels.md`: Telegram, Discord, Slack, WhatsApp incl. Baileys, Signal, Email, Google Chat, IRC, WebChat, Teams, Matrix, Mattermost, Feishu, BlueBubbles, Line, Viber, Messenger, Reddit, Mastodon, XMPP, RocketChat, Zulip, Twitch, Nostr, SendBlue, Webhook) | YES — channel modules | Per-channel extras in `pyproject.toml` (e.g. `channel-discord`, `channel-slack`, `channel-line`…); channels disabled by default | Live send/receive per channel **UNTESTED** | Tokens/secrets per platform; SendBlue has a free tier per docs — **no paid tier proposed** | `docs/user-guide/channels.md` table; `src/openjarvis/channels/*.py`; `pyproject.toml` channel extras |
-| Productivity / notes: Notion, Obsidian, Dropbox, GitHub notifications, Granola, HackerNews, RSS/news | YES | Per-connector config + tokens | Live sync **UNTESTED** | Per-service terms; no paid tier proposed | `src/openjarvis/connectors/{notion,obsidian,dropbox,github_notifications,granola,hackernews,news_rss}.py` |
-| Health / fitness: Oura, Strava, Apple Health | YES | Tokens / HealthKit | Live sync **UNTESTED** | — | `connectors/{oura,strava,apple_health}.py` |
-| Media / misc: Spotify, Apple Music, weather, WhatsApp connector, iMessage, Slack connector, Outlook, IMAP | YES | Tokens / local access | Live calls **UNTESTED** | — | `connectors/{spotify,apple_music,weather,whatsapp,imessage,slack_connector,outlook,imap}.py` |
-| Search: Tavily + `ddgs` (`tools-search` extra), `web_search` tool | YES — code | `tools-search = ["tavily-python", "ddgs"]` | Live search **UNTESTED**; Tavily is key-gated (cloud) — stays opt-in, never default | Tavily key-gated; `ddgs` free path exists — no paid plan proposed | `pyproject.toml`; `src/openjarvis/tools/web_search.py` |
-| Cloud LLM engines (OpenAI / Anthropic / Google / OpenRouter / LiteLLM / NVIDIA NIM) | YES — engine code | Only when a key is in env (`OPENROUTER_API_KEY` / `ANTHROPIC_API_KEY` / `OPENAI_API_KEY` / `GOOGLE_API_KEY`); local-first is default with no key | Live cloud calls **UNTESTED**; **no spend authorised** | **Paid/key-gated — NOT proposed**; LiteLLM pinned `==1.104.2` per security comment | `src/openjarvis/engine/{cloud,litellm,nim,openai_compat_engines}.py`; `docs/getting-started/install.md` cloud quick-path |
-| Local engines: Ollama, MLX (macOS), Apple Foundation Models, Gemma.cpp, vLLM | YES — engine code | Installer pulls Ollama + starter model (`qwen3.5:2b` per install docs — README-claim) | Live inference **UNTESTED** here | Free / local | `src/openjarvis/engine/{ollama,apple_fm,gemma_cpp}.py`; `pyproject.toml` extras `inference-mlx`, `inference-vllm`, `inference-gemma`, `afm` |
-| MCP: generic client/loader/server/transport + browser bridge | YES — code | External MCP servers via config (`tools.mcp.servers`); bridge allowlisted (see §2f) | Live consequential bridge call **UNTESTED** (README: refusal paths only) | Bridge MIT | `src/openjarvis/mcp/*.py` |
+| OpenMontage | Agentic video production (12 pipelines, 100+ tools, 700+ skill/knowledge files) | None (no video production in fork) | No video production; **AGPL-3.0 blocks copying/linking** into Apache-2.0 without a licensing decision | None until licensing decision. Do NOT silently mix AGPL into Apache code | **GAP: OPEN** — no video production; AGPL decision pending |
+| Open-Higgsfield-AI | AI image generation & cinema studio (20+ models) | None (no image generation in fork) | No image generation; **license UNVERIFIED** (description claims MIT, API null); backends are MuAPI frontends (paid/key-gated) | None (unverified license + paid backends). Do NOT assume free generation | **GAP: OPEN** — no image generation |
+| Open Generative AI | AI image & video generation studio (600+ models) | None | No image/video generation; backends are MuAPI frontends (paid/key-gated); "no content filters / unrestricted" is a safety flag | None (paid backends). Do NOT assume free generation | **GAP: OPEN** — no image/video generation |
 
-### 2e. Windows / WSL2 / macOS / Linux
+### 2e. Connectors / skills / routing / lists
 
-| Platform | Implemented (installer/docs/code) | Plugin plan | Blocked / Untested | Evidence |
-|---|---|---|---|---|
-| macOS | YES — bash installer + docs + Keychain backend (`security` CLI) + launchd | — | Live macOS install/run **UNTESTED**; real Keychain backend untested per README | `docs/getting-started/install.md`, `macos.md`; `security/keychain.py` `MacOSKeychainBackend` |
-| Linux | YES — bash installer + docs + Secret Service backend (`secret-tool`) + systemd | — | Live Linux systemd run **UNTESTED**; `secret-tool` backend untested (no keychain daemon in test VM per README) | `install.md`, `linux.md`; `keychain.py` Linux backend |
-| WSL2 on Windows | YES — bash installer run inside Ubuntu + docs | **Recommended Windows path** per `windows-native.md` | Live WSL2 run **UNTESTED** | `install.md` WSL2 row; `docs/getting-started/wsl2.md` |
-| Native Windows | YES — PowerShell installer (`install.ps1`) + scheduled-task service + Credential Vault backend (`CredReadW`/`CredWriteW` via ctypes) + docs marked "Phase-1" | — | **UNTESTED** — README: "Windows ctypes backend untested"; native Windows is Phase-1, WSL2 smoother per docs | `docs/getting-started/windows-native.md`; `keychain.py` Windows backend; `deploy/windows/` in wheel force-include |
-| Desktop GUI | YES — code (Tauri `desktop/src-tauri`, `frontend/` Vite app) + release downloads claimed (.exe/.dmg/.deb/.rpm/.AppImage) | — | Live desktop build/run **UNTESTED**; release-download links are README/docs claims, not verified here | `desktop/`, `frontend/`; `docs/getting-started/installation.md` |
-| Python support | `>=3.10,<3.14` (3.14 excluded: no numpy Windows wheels — `pyproject.toml` comment) | — | — | `pyproject.toml` `requires-python` |
-
-**Gap:** Cross-platform support is installer/docs/code-level. No live run on
-any of the four targets was performed in this pass; Keychain on all three OS
-families is explicitly untested upstream in this fork's README.
-
-### 2f. Four-language voice — Kannada, Hindi, English, Sanskrit
-
-Source of truth: `src/openjarvis/speech/indic.py` (profiles state what the
-code actually wires up; its own honesty rules forbid upgrading "forwarded"
-into "supported"). Test counts below are README-stated, not re-run here.
-
-| Language | STT | TTS (local) | Implemented (code) | Blocked / Untested | Evidence |
+| Repo | Useful assistant feature / unrelated | OpenJarvis already has | Missing / gap | Integration method | Gap status |
 |---|---|---|---|---|---|
-| English (`en`) | Forwarded-untested (`whisper_code="en"`) | Kokoro `lang_code="a"`, voice `af_heart` — **pipeline-untested** | YES — profile + Kokoro backend + faster-whisper/Deepgram/OpenAI-Whisper backends | No real mic/speaker/model/audio test in any language | `speech/indic.py` `VOICE_LANGUAGES["en"]`; `speech/kokoro_tts.py`; `speech/faster_whisper.py` |
-| Hindi (`hi`) | Forwarded-untested (`"hi"`) | Kokoro `lang_code="h"` but **no curated voice ID** — pipeline-untested; operator must set `speech.voice_id` from installed Kokoro release | YES — profile only | No real Hindi audio/model test; no curated Hindi voice in repo | `indic.py` `VOICE_LANGUAGES["hi"]` |
-| Kannada (`kn`) | Forwarded-untested (`"kn"` → Whisper) | **NO local pipeline** — Kokoro has no Kannada pipeline; repo curates no voice | YES — profile (explicitly unsupported for local TTS) | No real Kannada audio test; **local Kannada TTS does not exist** | `indic.py` `VOICE_LANGUAGES["kn"]` (`kokoro_lang_code=None`, `tts_status="no-local-pipeline"`) |
-| Sanskrit (`sa`) | Forwarded-untested (`"sa"` → Whisper) — whether installed Whisper handles Sanskrit is **UNVERIFIED** | **NO local pipeline** — no backend has a Sanskrit pipeline or voice | YES — profile (explicitly unsupported for TTS) | No real Sanskrit audio test; do NOT claim Sanskrit speech works | `indic.py` `VOICE_LANGUAGES["sa"]` |
+| Claude Code Router | Multi-model routing control plane (route across models, fuse capabilities, orchestrate tools) | Engine code (Ollama, MLX, cloud LLMs via keys, LiteLLM) + MCP client/loader | No router integration; no multi-model orchestration via this tool | External / reference only; **do NOT vendor** | **GAP: OPEN** — no router integration |
+| Geo Sleuth | Photo-geolocation skill (OSM geometry, skylines, satellite, street view) | None (no geolocation skill) | No geolocation skill; privacy-sensitive if ever used | External skill only; **do NOT vendor**; must be gated | **GAP: OPEN** — no geolocation skill (and privacy review required first) |
+| Awesome Free LLM APIs | List of free LLM APIs (keys) | None (not a feature) | Not a feature to integrate; listed services have own terms/keys | Reference list only; verify each service's terms before use | N/A (list, not a feature) |
+| Rea | Reverse-engineering agent (app behaviour → native binaries) | None | Unrelated to assistant features (security-research tool) | None | N/A (unrelated domain) |
+| Gods Eye View | Spy-satellite simulator / 3D globe spatial intelligence demo | None | Unrelated to assistant features (visualization demo) | None (also unlicensed) | N/A (unrelated domain) |
+| Octop | Competing self-hosted multi-user, multi-agent assistant | None of Octop's features | Reference only; no integration proposed | None (do NOT copy) | N/A (competing assistant) |
 
-| Voice feature | Implemented | Plugin plan | Blocked / Untested |
+### 2f. Owner projects (separate — do NOT copy into Jarvis)
+
+| Repo | What it is | Relation to Jarvis | Gap status |
 |---|---|---|---|
-| Push-to-talk state machine, sentence TTS, barge-in | YES — code (`speech/voice_state.py`, `voice_io.py`, `_voice_chat.py`) | — | Real audio **UNTESTED**; live-TTY barge-in mocked only (README) |
-| Opt-in wake word ("jarvis") | YES — transcript spotter, **OFF by default**, local-only | Enable explicitly; never sends audio to cloud for wake-word | **Not wired into chat REPL**; not an always-on keyword model; costs one local transcription per window (per `indic.py`) |
-| Indic QA (native-script, code-switch, names/numbers, cancellation/privacy) | YES — tests only (`tests/indic_qa/`) | — | README-stated: 71 passed, 5 xfailed; no real audio/model/device tests |
-| Cloud TTS/STT (Deepgram, Cartesia, OpenAI TTS/Whisper) | YES — backend code, key-gated | Only when user explicitly configures provider + key | **UNTESTED**; **no paid/cloud TTS proposed** — cloud TTS is never claimed to work for a language on this module's say-so (`indic.py`) |
-| Kokoro quirks | — | — | README: Kokoro has no Kannada/Sanskrit `lang_code` (falls back to American English); no explicit cancel token for in-flight extraction |
+| Agentic Browser Bridge | MCP stdio server for browser control (32 tools); MIT | **Integrated as external MCP stdio server** (see §3). Never imported in-process. | Integrated (external); live consequential calls UNTESTED |
+| StudyReels | Fully local study app (Flutter/Android, Cactus + Qwen3 0.6B) | Separate, unlicensed. **Do NOT copy** Android/Cactus code into Jarvis. | N/A (separate project) |
+| Tally LLM | Research prototype: TallyPrime Q&A, plain-English → Tally XML | Separate, unlicensed. **Do NOT copy.** Tally work stays on its own branch/repo. | N/A (separate project) |
+| ClientOps AI Demo | AI request-triage assistant demo (fictional data, approval-gated replies) | Separate, unlicensed. **Do NOT copy.** Approval-gating pattern is noted as consistent with the confirmation gate, not copied code. | N/A (separate project) |
+| RiskLabs | Explainable-AI financial risk prediction (ML + NLP + SHAP, Streamlit) | Separate, unlicensed. **Do NOT copy.** College academic project. | N/A (separate project) |
+| First Role Radar | Student job research via SerpApi Google Jobs | Separate, unlicensed. **Do NOT copy.** SerpApi is key-gated. | N/A (separate project) |
 
-**Gap (largest voice gap):** There is **no verified local TTS for Kannada or
-Sanskrit**, and no verified STT/TTS in any of the four languages with real
-audio. A four-language voice claim today would be false. The honest shape is:
-English/Hindi = local pipeline present-but-untested; Kannada/Sanskrit =
-STT-code-forwarded-only, TTS missing. Closing this needs a new, explicitly
-licensed TTS backend for Kannada/Sanskrit (not copying, not paid-by-default)
-plus real-audio tests — none proposed here.
+### 2g. Connectors / channels / platforms (OpenJarvis upstream features)
 
-### 2g. Security / memory / MCP-browser (fork additions — README-stated status, code-confirmed shape)
+Counts from file listing: **41 connector modules**, **34 channel modules**,
+**43 tool modules**. Code-present ≠ live-verified: no OAuth / live
+credential run was done.
 
-| Area | Implemented | Plugin plan | Blocked / Untested | Evidence |
-|---|---|---|---|---|
-| Central single-use tool confirmation | YES — `ConfirmationGate`: approvals bound to exact tool + arguments, expiring, consumed on first use; no "approve everything" mode | — | No live desktop/server end-to-end agent run (TestClient-level only per README); TOCTOU window between path check and file open remains (documented in code) | `security/confirmation.py`; README Personal Build Status table |
-| OS keychain vault (no file/plaintext fallback) | YES — backends per OS (see §2e) | — | Real keychain backends **UNTESTED**; legacy `.vault_key` migration has no direct test (README) | `security/keychain.py` ("NO file/plaintext fallback… fail closed") |
-| Memory v1 (SQLite + FTS5 facts, scopes, supersede/correct/delete, ranked retrieval) | YES — `memory/sqlite_facts.py`, `service.py`, `store.py` | — | Benchmark is developer-only (README: 125 tests incl. 100-query benchmark — README-stated, not re-run); Rust doc backends, cross-process writers, large-corpus ranking, JSONL→SQLite migration untested; superseded text stays in DB status-filtered (only `forget` hard-deletes) | `memory/`; README table |
-| MCP / browser via agentic-browser-bridge | YES — guarded stdio server entry | `bridge_server_entry()` builds `tools.mcp.servers` entry; default allowlist = read-only + reversible tools; navigation refused unless origin allowlisted (default loopback + `https://example.com`); consequential tools (click/type/navigate) need an operator confirmer or are refused fail-closed; native browser tools OFF by default | No real consequential bridge call end-to-end; no navigation beyond `about:blank` snapshot (README) | `mcp/browser_bridge.py` (`BRIDGE_READ_ONLY_TOOLS`, `BRIDGE_CONSEQUENTIAL_TOOLS`, `allowed_origins`) |
-| Agents / skills / scheduler / A2A | YES — code (8 built-in agents per README: morning_digest, deep_research, monitor_operative, orchestrator, native_react, operative, native_openhands, simple; `agents/`, `skills/`, `scheduler`, `a2a/`) | Skills from Hermes / OpenClaw / GitHub resolvers (no copying) | Live multi-agent / scheduled runs **UNTESTED** here; skill counts are README-claims | `src/openjarvis/agents/`, `skills/`, `a2a/`; README Built-in Agents table |
-| CI / workflows | — | — | **BLOCKED (known caveat):** `.github/workflows/` excluded from this fork's pushed history (token lacked `workflow` scope); CI files need restoration by someone with workflow scope (README) | README Known caveats |
+| Group | Implemented (code) | Blocked / Untested |
+|---|---|---|
+| Google (Gmail, Drive, Calendar, Contacts, Tasks) | YES — OAuth via `google_auth` / `oauth.py` | Live OAuth + live reads UNTESTED |
+| Apple (Calendar, Contacts, Health, Music, Notes) | YES — local Apple APIs / CLI | Live macOS run UNTESTED |
+| Messaging / channels (Telegram, Discord, Slack, WhatsApp incl. Baileys, Signal, Email, Google Chat, IRC, WebChat, Teams, Matrix, Mattermost, Feishu, BlueBubbles, Line, Viber, Messenger, Reddit, Mastodon, XMPP, RocketChat, Zulip, Twitch, Nostr, SendBlue, Webhook) | YES — channel modules; channels disabled by default | Live send/receive per channel UNTESTED |
+| Productivity (Notion, Obsidian, Dropbox, GitHub notifications, Granola, HackerNews, RSS/news) | YES | Live sync UNTESTED |
+| Health (Oura, Strava, Apple Health) | YES | Live sync UNTESTED |
+| Media / misc (Spotify, Apple Music, weather, WhatsApp connector, iMessage, Slack connector, Outlook, IMAP) | YES | Live calls UNTESTED |
+| Search (Tavily + `ddgs`, `web_search` tool) | YES | Live search UNTESTED; Tavily key-gated, opt-in only |
+| Cloud LLM engines (OpenAI / Anthropic / Google / OpenRouter / LiteLLM / NVIDIA NIM) | YES — engine code, key-gated | Live cloud calls UNTESTED; **no spend authorised** |
+| Local engines (Ollama, MLX, Apple Foundation Models, Gemma.cpp, vLLM) | YES — engine code | Live inference UNTESTED |
+| MCP (generic client/loader/server/transport + browser bridge) | YES — code | Live consequential bridge call UNTESTED (refusal paths only) |
 
----
+Telegram owner-only gateway (detail): Bot API channel (send + long-poll)
+is code-present; owner-only allowlist (`allowed_chat_ids`) is code-present.
+**UNTESTED live** — no bot token, no live send/receive run. A
+misconfigured/empty allowlist must be treated as **not owner-only**.
+Telegram user-account (MTProto / userbot) is **BLOCKED** — no MTProto
+client in code; Bot API only. Do not add a userbot. Single-use approval
+for consequential Telegram-triggered actions goes through the central
+gate; the live Telegram→approval round-trip is UNTESTED.
 
-## 3. Gaps that could NOT be verified (do not assume)
-
-1. **No delivered-inventory file** found in `~/workspace` — nothing to
-   reconcile against.
-2. **Hermes runtime features** (gateway, pm, desktop, agent-browser,
-   cua-driver behaviour) — only `install.sh` exists locally; no Hermes
-   source, LICENSE, or skills tree inspected.
-3. **Skill counts** ("~150 Hermes skills", "~13,700 OpenClaw skills") —
-   README claims, not counted here; per-skill licences unchecked.
-4. **Live behaviour everywhere**: no live Telegram send/receive, no live
-   connector OAuth, no live shell/tool run, no live MCP bridge consequential
-   call, no live desktop/server agent run, no live install on any OS, no
-   real-audio voice test in any language.
-5. **Licences**: all dependency licences; OpenClaw skills repo licence;
-   Cactus `third_party/cactus/LICENSE` full text (README NOTICE only);
-   StudyReels / paradox-agent / risklabs / tally-llm and other owner repos
-   (no LICENSE detected — treated as unlicensed, not public domain).
-6. **Test counts in README** (41 security, 125 memory, 45 MCP/browser,
-   46 voice, 71 Indic QA) — README-stated; the 667 test files in
-   `tests/` were counted by filename only, suites were **not** re-run here.
-7. **Android control** — affirmatively absent from the Jarvis fork; no
-   design, driver, or device test exists to verify.
-8. **Kannada / Sanskrit local TTS** — affirmatively absent; no backend in
-   the repo provides it.
-9. **Private fork remote state** — `paradox-jarvis-ultra` is private; its
-   remote contents were not inspected (only the local checkout + its
-   `origin` remote URL). Nothing was pushed.
+Windows / WSL2 / macOS / Linux: installers + docs + per-OS keychain
+backends are code-present. Live run on any target is UNTESTED. Native
+Windows is Phase-1 (WSL2 is the recommended Windows path). Desktop GUI
+(Tauri) is code-present; live build/run UNTESTED. Python `>=3.10,<3.14`.
 
 ---
 
-## 4. Rules for any follow-up build (binding constraints from this matrix)
+## 3. Fork additions — security / memory / MCP-browser (current state)
+
+### 3a. Security (corrected — stale "TOCTOU window remains" removed)
+
+| Area | State | Evidence |
+|---|---|---|
+| Central single-use tool confirmation | IMPLEMENTED — `ConfirmationGate`: approvals bound to exact tool + arguments, expiring, consumed on first use; no "approve everything" mode; all auto-approve bypasses removed | `security/confirmation.py`; `ToolExecutor` is the single enforcement point; server `POST /v1/approvals/tool` (grant) + `/revoke` |
+| Delivery redaction (fail-closed) | IMPLEMENTED — fail-closed ladder (Rust scanner → Python regex fallback → blocked placeholder); all outgoing text / structured fields / tool-call fragments / named SSE events redacted **before** delivery; error chunks carry fixed generic text only | `security/delivery_redaction.py`; `server/stream_bridge.py`, `routes.py`, `agent_manager_routes.py`, `research_router.py`, `ws_bridge.py`, CLI `chat_cmd` / `ask.py` |
+| Split-secret holdback (streaming) | IMPLEMENTED — `StreamingRedactor` holds any suffix that could grow into a secret: complete-pattern matches at end, partial-pattern matches, literal prefixes (proper **and complete**), assignment literals + trailing whitespace. Covers **every** two-chunk split position and 1-char feeds for every pattern (regression-tested). Bare literals emitted raw at flush (not secrets). | `security/delivery_redaction.py` (`_suspicious_start`, `_ASSIGNMENT_LITERALS`); `tests/security/test_delivery_redaction.py` (exhaustive split + 1-char tests) |
+| Overlong suppression | IMPLEMENTED — once an oversized suspicious suffix is dropped, the redactor stays in suppression until a safe separator (closing quote of an unclosed quoted value, else first whitespace / quote). Continuation bytes are dropped, never emitted. Memory stays bounded (suppressed bytes never buffered). | `security/delivery_redaction.py` (`_suppressing`, `_consume_suppressed`, `_unclosed_assignment_quote`); overlong regression tests |
+| Canonical path / TOCTOU | IMPLEMENTED — descriptor-based open (`open_within`): component-by-component walk holding a descriptor per directory, symlinks resolved via `readlink` on descriptors, final open with `O_NOFOLLOW` anchored on the parent descriptor, dev/ino identity check. **Non-destructive write:** opened WITHOUT `O_TRUNC`, validated, then `ftruncate` on the verified fd. A file appearing between walk and open is refused. Creation uses `O_CREAT | O_EXCL`. Adversarial tests (symlink-flip races + swap-before-open for truncate/append/create) assert victim bytes unchanged. | `security/canonical_path.py`; `tests/security/test_canonical_path_toctou.py` |
+| Shell | IMPLEMENTED, **OFF by default** — requires `OPENJARVIS_SHELL_ENABLED=1` or config + per-call confirmation; `docker_shell_exec` requires confirmation | `tools/shell_exec.py`, `tools/docker_shell_exec.py` |
+| OS keychain vault (no file/plaintext fallback) | IMPLEMENTED — backends per OS | Real keychain backends **UNTESTED**; legacy `.vault_key` migration has no direct test |
+| Output scanning boundary (residual) | **Known limitation:** already-emitted segments cannot be retracted; a secret split across two *discrete* named events (neither half matching a pattern) is not reconstructed; patterns outside the scanner list are not recognised. Persisted agent content in the managed-agent DB and trace store is still raw model output (storage, not delivery) — delivery paths are redacted, stored copies are not. | Documented in `security/delivery_redaction.py` |
+| TOCTOU residual | **Known limitation:** the descriptor-based fix covers `canonical_path` consumers (`file_read`, `file_write`, `apply_patch`). Other path-by-string opens (e.g. shell tool, storage backends) are unchanged. | Documented in code |
+
+### 3b. Memory v1
+
+IMPLEMENTED — SQLite + FTS5 facts (source/provenance, timestamps, scopes,
+dedupe/supersede/correction/deletion, ranked relevant retrieval);
+`remember` / `forget` / `show` / `correct` / `summary` commands;
+source-linked summaries, bounded retention, deletion across retrieval
+indexes. 100-query benchmark (developer benchmark only — **NOT** proof of
+lifelong perfect recall). UNTESTED: Rust-backed doc backends,
+cross-process writers, large-corpus ranking, JSONL→SQLite migration.
+Superseded facts' text stays in DB (status-filtered, never retrievable);
+only `forget` hard-deletes.
+
+### 3c. MCP / browser via agentic-browser-bridge
+
+IMPLEMENTED — guarded stdio server entry (`browser_bridge.py`); default
+allowlist = read-only + reversible tools; navigation refused unless origin
+allowlisted (default loopback + `https://example.com`); consequential
+tools (click/type/navigate) need an operator confirmer or are refused
+fail-closed; native browser tools OFF by default. Live smoke: stdio
+handshake + `tools/list` passed (32 tools); `browser_click` refuses
+without confirmer; `browser_navigate` to a non-allowlisted origin
+refuses. UNTESTED: no real consequential bridge call end-to-end; no
+navigation beyond `about:blank` snapshot.
+
+### 3d. Agents / skills / scheduler / A2A
+
+Code-present (8 built-in agents; `agents/`, `skills/`, `scheduler/`,
+`a2a/`). Skills from Hermes / OpenClaw / GitHub resolvers (no copying).
+Live multi-agent / scheduled runs UNTESTED. Skill counts are README-claims.
+
+### 3e. CI / workflows
+
+**BLOCKED (known caveat):** `.github/workflows/` excluded from the fork's
+pushed history (token lacked `workflow` scope); CI files need restoration
+by someone with workflow scope.
+
+---
+
+## 4. Gaps that remain OPEN (not closed by a plugin-plan cell)
+
+1. Independent security review of the fail-closed redaction + TOCTOU fixes
+   (archive + logs provided for that review).
+2. Live testing everywhere: Telegram allowlist, connectors OAuth, keychain
+   backends, real audio (all four languages), live shell/tool runs, live
+   MCP consequential calls, live desktop/server agent runs, live install
+   on any OS.
+3. Kannada / Sanskrit local TTS — no backend in the repo provides it.
+   VoxCPM is a model requiring weights + GPU, not integrated or tested.
+4. GUI automation — no driver in the fork.
+5. Android control — no driver in the fork; OpenDroid is unlicensed.
+6. Video / image production — no code in the fork; OpenMontage is AGPL
+   (licensing decision pending); Higgsfield / Open Generative AI backends
+   are paid/key-gated and their licenses are unverified/flagged.
+7. Hermes↔Jarvis end-to-end integration test + live gateway verification.
+8. Hermes Gadget SDK device integration — no code.
+9. Oh My Hermes plugin integration — no code.
+10. Claude Code Router integration — no code.
+11. Geo Sleuth skill integration — no code (and privacy review required).
+12. CI workflows — excluded from pushed history, need restoration.
+13. Real-audio voice verification in all four languages; wake word not
+    wired into the chat REPL.
+14. Persisted agent DB / trace store still holds raw model output
+    (storage, not delivery).
+15. TOCTOU fix covers `canonical_path` consumers only; other
+    path-by-string opens unchanged.
+
+---
+
+## 5. Rules for any follow-up build (binding constraints)
 
 - Keep upstream Apache-2.0 LICENSE + attribution in the fork; keep MIT
   notices on Bridge / Hermes / Cua artefacts.
-- Do **not** copy code from Cactus (source-available), StudyReels,
-  paradox-agent, risklabs, tally-llm, or any unlicensed repo into Jarvis.
+- Do **not** copy code from Cactus (source-available), OpenMontage
+  (AGPL), OpenDroid / Gods Eye View / StudyReels / Tally LLM / ClientOps
+  / RiskLabs / First Role Radar (unlicensed), or any unverified-license
+  repo into Jarvis.
 - Do **not** propose paid services (cloud LLMs, cloud TTS/STT, Tavily paid
-  tiers, SendBlue paid tiers, Cua Spaces cloud). Key-gated cloud paths stay
-  opt-in, off by default, and are never the default.
+  tiers, SendBlue paid tiers, Cua Spaces cloud, MuAPI frontends). Key-gated
+  cloud paths stay opt-in, off by default, and are never the default.
 - Hermes, Cua, and the browser bridge stay **external** (resolver / stdio /
   side-by-side process), never vendored into the fork.
 - Owner-only Telegram = allowlist set + live-tested from the owner chat
-  only; empty allowlist = not owner-only.
+  only; empty allowlist = not owner-only. No MTProto userbot.
 - System control stays gated (opt-in + per-action single-use approval);
   Android control and GUI automation do not exist — they need a new,
   explicitly approved, gated plugin, not a copy.
 - Four-language voice must not be claimed until real-audio tests pass per
   language; Kannada/Sanskrit local TTS is a known missing backend.
 - No "secure" / "ready" claim. Every feature above is code-present,
-  plugin-planned, or blocked/untested as tabled.
+  plugin-planned, or blocked/untested as tabled. A plugin plan never
+  closes a gap.
