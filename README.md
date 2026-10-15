@@ -1,3 +1,7 @@
+# Paradox Jarvis Ultra
+
+> Private personal fork of upstream OpenJarvis (repo: `chinmayshastry05-cpu/paradox-jarvis-ultra`, PRIVATE). Upstream attribution, Apache-2.0 license, and history preserved. See "Personal Build Status" below for what is implemented / tested / untested. No blanket "secure" or "ready" claim is made.
+
 <div align="center">
   <img alt="OpenJarvis" src="assets/OpenJarvis_Horizontal_Logo.png" width="400">
 
@@ -34,7 +38,7 @@
 
 ## Personal Build Status (this fork — NOT upstream)
 
-This is a private personal fork of upstream OpenJarvis (base: upstream commit `74694cdb`, Apache-2.0, attribution kept). It adds security, memory, MCP/browser, voice, and Indic-language work on top of upstream. **No blanket "secure" or "ready" claim is made.** The table below labels each area as implemented / tested / untested. Mocks and fixture tests do NOT count as real-model, real-audio, or real-device proof.
+This is **Paradox Jarvis Ultra**, a private personal fork of upstream OpenJarvis (base: upstream commit `74694cdb`, Apache-2.0, attribution kept). It adds security, memory, MCP/browser, voice, and Indic-language work on top of upstream. **No blanket "secure" or "ready" claim is made.** The table below labels each area as implemented / tested / untested. Mocks and fixture tests do NOT count as real-model, real-audio, or real-device proof.
 
 | Area | Implemented | Tested (unit/mocked) | NOT tested / unverified |
 |---|---|---|---|
