@@ -11,6 +11,31 @@ from openjarvis.core.registry import ToolRegistry
 from openjarvis.core.types import ToolResult
 from openjarvis.tools._stubs import BaseTool, ToolSpec
 
+# Shell execution is DISABLED by default — not just hidden from the UI.
+# Explicit opt-in is required: set OPENJARVIS_SHELL_ENABLED=1 in the
+# process environment, or ``security.shell_enabled = true`` in config
+# (applied by setup_security()). Opt-in alone is not enough: the tool
+# also declares requires_confirmation=True, so ToolExecutor still
+# demands a single-use, argument-bound approval before running.
+SHELL_OPT_IN_ENV_VAR = "OPENJARVIS_SHELL_ENABLED"
+_SHELL_OPT_IN_VALUES = frozenset({"1", "true", "yes", "on"})
+
+
+def shell_enabled() -> bool:
+    """Return True only if the operator explicitly opted into shell use."""
+    return (
+        os.environ.get(SHELL_OPT_IN_ENV_VAR, "").strip().lower() in _SHELL_OPT_IN_VALUES
+    )
+
+
+def set_shell_enabled(enabled: bool) -> None:
+    """Programmatically opt shell execution in or out (config wiring/tests)."""
+    if enabled:
+        os.environ[SHELL_OPT_IN_ENV_VAR] = "1"
+    else:
+        os.environ.pop(SHELL_OPT_IN_ENV_VAR, None)
+
+
 # Maximum output size per stream (100 KB)
 _MAX_OUTPUT_BYTES = 102_400
 
@@ -67,7 +92,13 @@ class ShellExecTool(BaseTool):
                 "properties": {
                     "command": {
                         "type": "string",
-                        "description": "Shell command to execute.",
+                        "description": (
+                            "Shell command to execute. Shell execution is"
+                            " DISABLED by default: it requires explicit"
+                            " opt-in (OPENJARVIS_SHELL_ENABLED=1 or"
+                            " security.shell_enabled=true) AND a"
+                            " single-use approval for this exact command."
+                        ),
                     },
                     "timeout": {
                         "type": "integer",
@@ -103,6 +134,20 @@ class ShellExecTool(BaseTool):
             return ToolResult(
                 tool_name="shell_exec",
                 content="No command provided.",
+                success=False,
+            )
+
+        # Fail closed: without explicit opt-in the shell never runs,
+        # no matter which entry point invoked the tool.
+        if not shell_enabled():
+            return ToolResult(
+                tool_name="shell_exec",
+                content=(
+                    "Shell execution is disabled by default. Opt in"
+                    " explicitly with OPENJARVIS_SHELL_ENABLED=1 or"
+                    " security.shell_enabled=true, and approve this"
+                    " exact command when prompted."
+                ),
                 success=False,
             )
 
@@ -238,4 +283,9 @@ class ShellExecTool(BaseTool):
         )
 
 
-__all__ = ["ShellExecTool"]
+__all__ = [
+    "SHELL_OPT_IN_ENV_VAR",
+    "ShellExecTool",
+    "set_shell_enabled",
+    "shell_enabled",
+]

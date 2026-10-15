@@ -1028,8 +1028,16 @@ async def _stream_managed_agent(
                     agent_id=agent_id,
                     max_turns=int(config.get("max_turns", 8)),
                     temperature=float(config.get("temperature", 0.3)),
-                    interactive=True,
-                    confirm_callback=lambda _prompt: True,
+                )
+                # No auto-approval: tools requiring confirmation fail
+                # closed unless the client pre-granted an exact approval
+                # via /v1/approvals/tool. Wire the shared gate so such
+                # grants reach this agent's executor.
+                from openjarvis.security.runtime import wire_agent_security
+
+                wire_agent_security(
+                    dr_agent,
+                    confirmation_gate=getattr(app_state, "confirmation_gate", None),
                 )
                 if resolved_toolkit.mcp_clients:
                     dr_agent._mcp_clients = resolved_toolkit.mcp_clients
@@ -1314,14 +1322,16 @@ async def _stream_managed_agent(
     # at all — this is the live SSE chat path for managed agents (what
     # Tailscale/remote exposure actually hits), so tool calls made here ran
     # with zero RBAC gating and zero rate limiting regardless of config.
+    # No auto-approval: tools requiring confirmation fail closed unless
+    # the client pre-granted an exact approval via /v1/approvals/tool,
+    # which this shared gate consumes (single-use, argument-bound).
     stream_tool_executor = ToolExecutor(
         tools=resolved_toolkit.instances,
         bus=bus,
-        interactive=True,
-        confirm_callback=lambda _prompt: True,
         capability_policy=getattr(app_state, "capability_policy", None),
         rate_limiter=getattr(app_state, "rate_limiter", None),
         agent_id=agent_id,
+        confirmation_gate=getattr(app_state, "confirmation_gate", None),
     )
     # The executor is request-local, but the conversation is not: seed taint
     # from replayed history so data returned by a tool in an earlier request
@@ -1888,8 +1898,21 @@ def create_agent_manager_router(
                                         request.app.state, "rate_limiter", None
                                     ),
                                     agent_id=agent_id,
-                                    interactive=True,
-                                    confirm_callback=lambda _prompt: True,
+                                )
+                                # No auto-approval: confirmation tools fail
+                                # closed unless pre-granted via
+                                # /v1/approvals/tool (shared gate).
+                                from openjarvis.security.runtime import (
+                                    wire_agent_security,
+                                )
+
+                                wire_agent_security(
+                                    agent_inst,
+                                    confirmation_gate=getattr(
+                                        request.app.state,
+                                        "confirmation_gate",
+                                        None,
+                                    ),
                                 )
 
                                 def handler(text: str) -> str:
@@ -1971,8 +1994,21 @@ def create_agent_manager_router(
                                         request.app.state, "rate_limiter", None
                                     ),
                                     agent_id=agent_id,
-                                    interactive=True,
-                                    confirm_callback=lambda _prompt: True,
+                                )
+                                # No auto-approval: confirmation tools fail
+                                # closed unless pre-granted via
+                                # /v1/approvals/tool (shared gate).
+                                from openjarvis.security.runtime import (
+                                    wire_agent_security,
+                                )
+
+                                wire_agent_security(
+                                    dr_agent,
+                                    confirmation_gate=getattr(
+                                        request.app.state,
+                                        "confirmation_gate",
+                                        None,
+                                    ),
                                 )
                         bus = getattr(request.app.state, "bus", None)
                         if bus is None:

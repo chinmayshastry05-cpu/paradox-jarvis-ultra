@@ -64,8 +64,17 @@ def wire_agent_security(
     agent_id: str = "",
     overwrite: bool = True,
     synchronize_runtime_cache: bool = False,
+    confirmation_gate: Any = None,
 ) -> None:
-    """Wire runtime security into an already-created agent and executor."""
+    """Wire runtime security into an already-created agent and executor.
+
+    ``confirmation_gate`` (a :class:`ConfirmationGate`) is wired onto
+    the agent's ToolExecutor when given, so pre-granted single-use
+    approvals (e.g. from the server approval endpoint) reach agents
+    whose constructors predate the gate parameter. Never pass None to
+    clear an executor's gate: a missing gate means the executor keeps
+    its own private one and fails closed.
+    """
     if agent is None:
         return
     if bus is not None:
@@ -110,6 +119,8 @@ def wire_agent_security(
     executor = getattr(agent, "_executor", None)
     if executor is None:
         return
+    if confirmation_gate is not None:
+        executor._confirmation_gate = confirmation_gate
     if bus is not None:
         executor._bus = bus
     if capability_policy is not None and (

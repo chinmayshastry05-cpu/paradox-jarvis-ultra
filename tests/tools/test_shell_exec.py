@@ -40,6 +40,19 @@ def _make_mock_rust(side_effect=None, return_value=None):
 
 
 class TestShellExecTool:
+    @pytest.fixture(autouse=True)
+    def _opt_in_to_shell(self, monkeypatch):
+        # These tests exercise execution behaviour, so they run with the
+        # explicit shell opt-in. The disabled-by-default behaviour is
+        # covered by test_disabled_by_default below.
+        monkeypatch.setenv("OPENJARVIS_SHELL_ENABLED", "1")
+
+    def test_disabled_by_default(self, monkeypatch):
+        monkeypatch.delenv("OPENJARVIS_SHELL_ENABLED", raising=False)
+        result = ShellExecTool().execute(command="echo hi")
+        assert result.success is False
+        assert "disabled" in result.content.lower()
+
     def test_registered_via_tools_package_import(self):
         import openjarvis.tools as tools_pkg
         from openjarvis.core.registry import ToolRegistry

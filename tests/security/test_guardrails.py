@@ -399,41 +399,71 @@ class TestGuardrailsInputPolicy:
 @pytest.mark.asyncio
 @pytest.mark.parametrize("method", ["stream", "stream_full"])
 @pytest.mark.parametrize("mode", list(RedactionMode))
-async def test_stream_output_remains_post_hoc(method: str, mode: RedactionMode) -> None:
+async def test_stream_output_scanned_before_delivery(
+    method: str, mode: RedactionMode
+) -> None:
+    """Streaming output is scanned BEFORE delivery, never post-hoc.
+
+    A secret must never reach the consumer unredacted (REDACT), must
+    raise before the secret segment is delivered (BLOCK), and must raise
+    an alert (WARN, which passes content through by design).
+    """
     bus = EventBus(record_history=True)
     backend = _recording_engine()
-    expected = ["my key ", "sk-abc123def456ghi789jkl012"]
-    if method == "stream_full":
-        expected = [
-            StreamChunk(content=expected[0]),
-            StreamChunk(content=expected[1], tool_calls=[{"index": 0}]),
-            StreamChunk(
-                finish_reason="stop",
-                usage={"total_tokens": 3},
-                content_blocks=[{"type": "text", "text": "done"}],
-                tool_results=[{"id": "call-1"}],
-            ),
-        ]
-    getattr(backend, method).side_effect = lambda *a, **kw: _async_token_iter(expected)
+    if method == "stream":
+        getattr(backend, method).side_effect = lambda *a, **kw: _async_token_iter(
+            ["my key ", _SECRET]
+        )
+    else:
+        getattr(backend, method).side_effect = lambda *a, **kw: _async_token_iter(
+            [
+                StreamChunk(content="my key "),
+                StreamChunk(content=_SECRET, tool_calls=[{"index": 0}]),
+                StreamChunk(
+                    finish_reason="stop",
+                    usage={"total_tokens": 3},
+                    content_blocks=[{"type": "text", "text": "done"}],
+                    tool_results=[{"id": "call-1"}],
+                ),
+            ]
+        )
     guarded = GuardrailsEngine(backend, mode=mode, bus=bus)
     iterator = getattr(guarded, method)([Message(Role.USER, "hello")], model="test")
-    for item in expected:
-        assert await iterator.__anext__() is item
-        assert not bus.history
-    with pytest.raises(StopAsyncIteration):
-        await iterator.__anext__()
-    assert len(bus.history) == 1
-    event = bus.history[0]
-    assert event.event_type == EventType.SECURITY_ALERT
-    assert event.data["direction"] == "output"
-    assert event.data["mode"] == f"{method}_post_hoc"
-    assert event.data["findings"][0]["pattern"] == "openai_key"
+    if mode == RedactionMode.BLOCK:
+        with pytest.raises(SecurityBlockError):
+            async for _ in iterator:
+                pass
+        blocks = [e for e in bus.history if e.event_type == EventType.SECURITY_BLOCK]
+        assert blocks and blocks[0].data["direction"] == "output"
+        assert blocks[0].data["mode"] == "block"
+        return
+    items = [item async for item in iterator]
+    if method == "stream":
+        delivered = "".join(items)
+    else:
+        delivered = "".join(c.content or "" for c in items if c.content)
+        # Non-content chunks pass through with their fields intact.
+        finish = [c for c in items if c.finish_reason == "stop"]
+        assert finish and finish[0].usage == {"total_tokens": 3}
+    if mode == RedactionMode.REDACT:
+        assert _SECRET not in delivered
+        assert "[REDACTED:" in delivered
+    alerts = [e for e in bus.history if e.event_type == EventType.SECURITY_ALERT]
+    assert alerts
+    assert alerts[0].data["direction"] == "output"
+    assert alerts[0].data["mode"] == mode.value
+    assert alerts[0].data["findings"][0]["pattern"] == "openai_key"
 
 
 @pytest.mark.asyncio
 class TestGuardrailsEngineStream:
     async def test_stream_yields_tokens(self) -> None:
-        """stream() yields all tokens from the wrapped engine."""
+        """stream() yields the full buffered content of the wrapped engine.
+
+        Buffering coalesces token granularity (scanning happens before
+        delivery), so the joined content — not per-token identity — is
+        the contract.
+        """
         mock = _make_mock_engine()
         mock.stream = lambda messages, **kw: _async_token_iter(
             ["Hello", " ", "world"],
@@ -442,14 +472,14 @@ class TestGuardrailsEngineStream:
 
         messages = [Message(role=Role.USER, content="hi")]
         tokens = [t async for t in ge.stream(messages, model="test")]
-        assert tokens == ["Hello", " ", "world"]
+        assert "".join(tokens) == "Hello world"
 
-    async def test_stream_scans_output_post_hoc(self) -> None:
-        """stream() publishes SECURITY_ALERT after yielding sensitive tokens."""
+    async def test_stream_scans_output_pre_delivery(self) -> None:
+        """stream() publishes SECURITY_ALERT (WARN mode) without a leak."""
         bus = EventBus(record_history=True)
         mock = _make_mock_engine()
         mock.stream = lambda messages, **kw: _async_token_iter(
-            ["The key is ", "sk-abc123def456ghi789jkl012"],
+            ["The key is ", _SECRET],
         )
         ge = GuardrailsEngine(mock, bus=bus)
 
@@ -459,14 +489,14 @@ class TestGuardrailsEngineStream:
         alerts = [e for e in bus.history if e.event_type == EventType.SECURITY_ALERT]
         assert len(alerts) >= 1
         assert alerts[0].data["direction"] == "output"
-        assert alerts[0].data["mode"] == "stream_post_hoc"
+        assert alerts[0].data["mode"] == "warn"
 
     async def test_stream_publishes_alert_with_findings(self) -> None:
         """Alert event contains a non-empty findings list with 'pattern' key."""
         bus = EventBus(record_history=True)
         mock = _make_mock_engine()
         mock.stream = lambda messages, **kw: _async_token_iter(
-            ["The key is ", "sk-abc123def456ghi789jkl012"],
+            ["The key is ", _SECRET],
         )
         ge = GuardrailsEngine(mock, bus=bus)
 

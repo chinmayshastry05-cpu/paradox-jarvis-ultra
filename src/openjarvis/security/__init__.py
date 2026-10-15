@@ -34,6 +34,18 @@ def setup_security(
     if not config.security.enabled:
         return SecurityContext(engine=engine)
 
+    # Shell opt-in from config: enabling only. An explicit
+    # security.shell_enabled=true opts the process in; a false value
+    # never clears an environment opt-in, so the two opt-in routes do
+    # not fight each other.
+    if getattr(config.security, "shell_enabled", False):
+        try:
+            from openjarvis.tools.shell_exec import set_shell_enabled
+
+            set_shell_enabled(True)
+        except Exception as exc:
+            logger.debug("Failed to apply security.shell_enabled: %s", exc)
+
     from openjarvis.security._stubs import BaseScanner
     from openjarvis.security.audit import AuditLogger
     from openjarvis.security.guardrails import GuardrailsEngine

@@ -202,11 +202,23 @@ class ToolExecutor:
         agent_id: str = "",
         boundary_guard: Optional[Any] = None,
         rate_limiter: Optional[Any] = None,
+        confirmation_gate: Optional[Any] = None,
     ) -> None:
         self._tools: Dict[str, BaseTool] = {t.spec.name: t for t in tools}
         self._bus = bus
         self._interactive = interactive
         self._confirm_callback = confirm_callback
+        # Central confirmation enforcement: every entry point (CLI, server,
+        # desktop-via-server, MCP) funnels through this executor, and this
+        # gate is the single place approvals are minted/verified/consumed.
+        # A caller-supplied gate lets the server share approvals granted
+        # via its approval endpoint with the executor running the agent;
+        # otherwise each executor owns a private in-memory gate.
+        if confirmation_gate is None:
+            from openjarvis.security.confirmation import ConfirmationGate
+
+            confirmation_gate = ConfirmationGate()
+        self._confirmation_gate = confirmation_gate
         self._default_timeout = default_timeout
         self._capability_policy = capability_policy
         self._agent_id = agent_id
@@ -397,23 +409,67 @@ class ToolExecutor:
         if isinstance(params, dict):
             params.pop("_taint", None)
 
-        # Confirmation check for sensitive tools
+        # Confirmation check for sensitive tools — the central gate.
+        # Approval must be single-use and bound to exactly this tool +
+        # arguments. Three sources, in order:
+        #   1. an approval token carried on the ToolCall (server/desktop);
+        #   2. a pre-granted approval matching these exact arguments
+        #      (e.g. granted via the server approval endpoint);
+        #   3. an interactive human prompt, whose "yes" mints a single-use
+        #      approval for exactly these arguments and consumes it at
+        #      once — so a prompt approval can never be replayed or
+        #      retargeted at different arguments.
+        # Anything else fails CLOSED. In particular, no caller may
+        # bypass this by passing a callback that always returns True:
+        # such call sites are removed, and a callback here is only ever
+        # invoked as a real human prompt.
         if tool.spec.requires_confirmation:
-            if not self._interactive or self._confirm_callback is None:
+            approved = False
+            token = getattr(tool_call, "approval_token", "") or ""
+            if token:
+                approved = self._confirmation_gate.consume(
+                    token, tool_call.name, params
+                )
+                if not approved:
+                    return ToolResult(
+                        tool_name=tool_call.name,
+                        content=(
+                            f"Tool '{tool_call.name}' approval was rejected:"
+                            " token invalid, expired, revoked, already"
+                            " used, or bound to different arguments."
+                        ),
+                        success=False,
+                    )
+            elif self._confirmation_gate.consume_matching(tool_call.name, params):
+                approved = True
+            elif self._interactive and self._confirm_callback is not None:
+                prompt = (
+                    f"Allow execution of tool '{tool_call.name}' with args {params}?"
+                )
+                if not self._confirm_callback(prompt):
+                    return ToolResult(
+                        tool_name=tool_call.name,
+                        content=(f"Tool '{tool_call.name}' execution denied by user."),
+                        success=False,
+                    )
+                # Mint-then-consume: the approval exists only for this
+                # exact call and is spent before execution begins.
+                try:
+                    approval = self._confirmation_gate.grant(
+                        tool_call.name, params, ttl_seconds=60
+                    )
+                    approved = self._confirmation_gate.consume(
+                        approval.token, tool_call.name, params
+                    )
+                except ValueError:
+                    approved = False
+            if not approved:
                 return ToolResult(
                     tool_name=tool_call.name,
                     content=(
-                        f"Tool '{tool_call.name}' requires"
-                        " confirmation but no confirmation"
-                        " callback is available."
+                        f"Tool '{tool_call.name}' requires confirmation"
+                        " but no valid approval was presented."
                     ),
-                    success=False,
-                )
-            prompt = f"Allow execution of tool '{tool_call.name}' with args {params}?"
-            if not self._confirm_callback(prompt):
-                return ToolResult(
-                    tool_name=tool_call.name,
-                    content=f"Tool '{tool_call.name}' execution denied by user.",
                     success=False,
                 )
 

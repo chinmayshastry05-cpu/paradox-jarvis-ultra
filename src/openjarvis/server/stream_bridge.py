@@ -38,6 +38,24 @@ _EVENT_MAP = {
 _DONE = object()
 
 
+def _redact_secrets_for_delivery(text: str) -> str:
+    """Redact secrets from text about to be streamed to a client.
+
+    Defense-in-depth: the engine's guardrails already scan model output,
+    but tool results forwarded here are not model output and were never
+    scanned. A failure to load the scanner leaves text unchanged rather
+    than breaking the stream — the guardrails remain the primary control.
+    Only secrets are redacted here (never PII), so legitimate content
+    like contact details is untouched.
+    """
+    try:
+        from openjarvis.security.scanner import SecretScanner
+
+        return SecretScanner().redact(text)
+    except Exception:
+        return text
+
+
 def _estimate_prompt_tokens(messages: list) -> int:
     """Estimate prompt tokens from request messages (incl. system, user, context).
 
@@ -228,14 +246,16 @@ class AgentStreamBridge:
                 yield "data: [DONE]\n\n"
                 return
 
-            # Emit tool results metadata if any
+            # Emit tool results metadata if any. Tool output is scanned
+            # for secrets before delivery: it is not model output, so
+            # the engine guardrails never saw it.
             tool_results_data = []
             for tr in agent_result.tool_results:
                 tool_results_data.append(
                     {
                         "tool_name": tr.tool_name,
                         "success": tr.success,
-                        "output": tr.content,
+                        "output": _redact_secrets_for_delivery(tr.content or ""),
                         "latency_ms": tr.latency_seconds * 1000,
                     }
                 )
@@ -252,8 +272,9 @@ class AgentStreamBridge:
             # other internal context and could therefore contradict the
             # result reported by the agent events.  Replay the final content
             # in chunks so the OpenAI-compatible streaming response stays
-            # consistent with the completed agent run.
-            content = agent_result.content or ""
+            # consistent with the completed agent run. Secrets are redacted
+            # before delivery in case the engine ran without guardrails.
+            content = _redact_secrets_for_delivery(agent_result.content or "")
             if content:
                 words = content.split(" ")
                 for i, word in enumerate(words):

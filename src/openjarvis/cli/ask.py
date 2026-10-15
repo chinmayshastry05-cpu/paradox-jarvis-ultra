@@ -430,6 +430,7 @@ def _run_agent(
         try:
             from pathlib import Path
 
+            from openjarvis.cli._confirm import confirm_tool
             from openjarvis.skills.manager import SkillManager
             from openjarvis.tools._stubs import ToolExecutor
 
@@ -439,7 +440,7 @@ def _run_agent(
                 capability_policy=capability_policy,
                 agent_id=getattr(agent_cls, "agent_id", agent_name),
                 interactive=True,
-                confirm_callback=lambda prompt: True,
+                confirm_callback=confirm_tool,
             )
             skill_manager = SkillManager(
                 bus,
@@ -476,8 +477,10 @@ def _run_agent(
     if accepts_tools:
         agent_kwargs["tools"] = tools
         agent_kwargs["max_turns"] = config.agent.max_turns
+        from openjarvis.cli._confirm import confirm_tool
+
         agent_kwargs["interactive"] = True
-        agent_kwargs["confirm_callback"] = lambda prompt: True
+        agent_kwargs["confirm_callback"] = confirm_tool
         agent_kwargs["agent_id"] = agent_name
         if capability_policy is not None:
             agent_kwargs["capability_policy"] = capability_policy

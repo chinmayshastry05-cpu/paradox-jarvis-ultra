@@ -56,6 +56,12 @@ class ToolCall:
     id: str
     name: str
     arguments: str  # JSON string
+    # Single-use approval token from ConfirmationGate, bound to exactly
+    # this tool + arguments. Empty means "no pre-granted approval": the
+    # executor falls back to a matching pre-grant or an interactive
+    # prompt, and fails closed if neither approves. Never populated by
+    # the model itself — only by entry points that obtained user approval.
+    approval_token: str = ""
 
 
 @dataclass(slots=True)

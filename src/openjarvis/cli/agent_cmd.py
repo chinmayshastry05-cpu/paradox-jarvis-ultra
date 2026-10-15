@@ -813,16 +813,14 @@ def errors():
 @agent.command("ask")
 @click.argument("agent_id")
 @click.argument("message")
-@click.option(
-    "--yes/--no-yes",
-    "auto_approve",
-    default=True,
-    help="Auto-approve tool execution that would otherwise need confirmation. "
-    "Default: on (suits non-interactive CLI use). Pass --no-yes to require a "
-    "TTY prompt for tools whose ToolSpec sets requires_confirmation=True.",
-)
-def ask(agent_id, message, auto_approve):
-    """Ask an agent a question (immediate response)."""
+def ask(agent_id, message):
+    """Ask an agent a question (immediate response).
+
+    Tools that require confirmation always prompt on the TTY — there is
+    no auto-approve flag: a blanket approval cannot be bound to the
+    exact arguments of each action, so it cannot satisfy confirmation.
+    In non-interactive use those tools fail closed.
+    """
     manager = _get_manager()
     agent_id = _resolve_agent_id(manager, agent_id)
     manager.send_message(agent_id, message, mode="immediate")
@@ -832,16 +830,14 @@ def ask(agent_id, message, auto_approve):
     if executor is None:
         click.echo("Executor not available", err=True)
         raise SystemExit(1)
-    # Wire a confirmation callback so the agent's own ToolExecutor can actually
-    # run tools whose ToolSpec sets requires_confirmation=True (e.g. shell_exec,
-    # git_*). `executor` is the AgentExecutor; the callback is read in
-    # _invoke_agent and propagated to the constructed agent via agent_kwargs.
-    if auto_approve:
-        executor._confirm_callback = lambda _prompt: True
-    else:
-        executor._confirm_callback = lambda prompt: click.confirm(
-            f"\n{prompt}", default=False
-        )
+    # Wire a confirmation callback so the agent's own ToolExecutor can
+    # prompt for tools whose ToolSpec sets requires_confirmation=True
+    # (e.g. shell_exec, git_*). `executor` is the AgentExecutor; the
+    # callback is read in _invoke_agent and propagated to the
+    # constructed agent via agent_kwargs.
+    from openjarvis.cli._confirm import confirm_tool
+
+    executor._confirm_callback = confirm_tool
     # Run the tick with a live trace rather than blocking in silence — the
     # message we just queued is consumed as this tick's input, so the user
     # sees the agent's searches/tool calls instead of an apparent hang.

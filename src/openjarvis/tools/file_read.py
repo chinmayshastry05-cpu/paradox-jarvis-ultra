@@ -51,13 +51,15 @@ class FileReadTool(BaseTool):
         )
 
     def _is_path_allowed(self, path: Path) -> bool:
-        """Check if path is within allowed directories."""
-        if not self._allowed_dirs:
-            return True
-        resolved = path.resolve()
-        return any(
-            resolved == d or resolved.is_relative_to(d) for d in self._allowed_dirs
-        )
+        """Check if path is within allowed directories.
+
+        Canonical check: symlinks (including in parent directories) are
+        resolved before containment is tested, so a symlink inside an
+        allowed root cannot smuggle access to files outside it.
+        """
+        from openjarvis.security.canonical_path import is_within
+
+        return is_within(path, self._allowed_dirs)
 
     def execute(self, **params: Any) -> ToolResult:
         file_path = params.get("path", "")

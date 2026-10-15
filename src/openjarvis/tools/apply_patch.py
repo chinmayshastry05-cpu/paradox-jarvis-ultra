@@ -10,6 +10,7 @@ from typing import Any, List, Optional
 
 from openjarvis.core.registry import ToolRegistry
 from openjarvis.core.types import ToolResult
+from openjarvis.tools._paths import resolve_allowed_dirs
 from openjarvis.tools._stubs import BaseTool, ToolSpec
 
 # ---------------------------------------------------------------------------
@@ -183,6 +184,14 @@ class ApplyPatchTool(BaseTool):
 
     tool_id = "apply_patch"
 
+    def __init__(
+        self,
+        allowed_dirs: Optional[List[str]] = None,
+    ) -> None:
+        self._allowed_dirs = [
+            Path(d).expanduser().resolve() for d in resolve_allowed_dirs(allowed_dirs)
+        ]
+
     @property
     def spec(self) -> ToolSpec:
         return ToolSpec(
@@ -259,6 +268,20 @@ class ApplyPatchTool(BaseTool):
             return ToolResult(
                 tool_name="apply_patch",
                 content=f"Access denied: {target} is a sensitive file.",
+                success=False,
+            )
+
+        # Canonical path check: resolve symlinks, reject escapes from
+        # allowed roots. A patch targeting a symlink inside an allowed
+        # root that points outside must not write outside.
+        from openjarvis.security.canonical_path import resolve_within
+
+        try:
+            path = resolve_within(path, self._allowed_dirs)
+        except ValueError as exc:
+            return ToolResult(
+                tool_name="apply_patch",
+                content=f"Access denied: {exc}",
                 success=False,
             )
 

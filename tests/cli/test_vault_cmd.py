@@ -41,14 +41,31 @@ class TestVaultCmd:
         pytest.importorskip("cryptography")
 
         vault_file = tmp_path / "vault.enc"
-        key_file = tmp_path / ".vault_key"
+        store: dict = {}
+
+        class _FakeKeychain:
+            def get(self, account: str):
+                return store.get(account)
+
+            def set(self, account: str, value: str) -> None:
+                store[account] = value
+
+            def delete(self, account: str) -> None:
+                store.pop(account, None)
 
         with (
             mock.patch("openjarvis.cli.vault_cmd._VAULT_FILE", vault_file),
-            mock.patch("openjarvis.cli.vault_cmd._VAULT_KEY_FILE", key_file),
+            mock.patch(
+                "openjarvis.cli.vault_cmd._LEGACY_KEY_FILE",
+                tmp_path / ".vault_key",
+            ),
             mock.patch(
                 "openjarvis.cli.vault_cmd.DEFAULT_CONFIG_DIR",
                 tmp_path,
+            ),
+            mock.patch(
+                "openjarvis.cli.vault_cmd.Keychain",
+                return_value=_FakeKeychain(),
             ),
         ):
             runner = CliRunner()
@@ -61,6 +78,37 @@ class TestVaultCmd:
             result = runner.invoke(vault, ["get", "MY_API_KEY"])
             assert result.exit_code == 0
             assert "secret123" in result.output
+
+            # The key lives in the keychain (the fake store), never in a
+            # file next to the ciphertext.
+            assert vault_file.exists()
+            assert not (tmp_path / ".vault_key").exists()
+            assert store, "key should have been stored in the keychain"
+
+    def test_vault_set_fails_closed_without_keychain(self, tmp_path: Path) -> None:
+        """Keychain unavailable → set fails, nothing is written anywhere."""
+        from openjarvis.security.keychain import KeychainUnavailable
+
+        vault_file = tmp_path / "vault.enc"
+        with (
+            mock.patch("openjarvis.cli.vault_cmd._VAULT_FILE", vault_file),
+            mock.patch(
+                "openjarvis.cli.vault_cmd._LEGACY_KEY_FILE",
+                tmp_path / ".vault_key",
+            ),
+            mock.patch(
+                "openjarvis.cli.vault_cmd.DEFAULT_CONFIG_DIR",
+                tmp_path,
+            ),
+            mock.patch(
+                "openjarvis.cli.vault_cmd.Keychain",
+                side_effect=KeychainUnavailable("no backend"),
+            ),
+        ):
+            result = CliRunner().invoke(vault, ["set", "K", "v"])
+            assert result.exit_code == 1
+            assert not vault_file.exists()
+            assert not (tmp_path / ".vault_key").exists()
 
     def test_vault_remove_not_found(self) -> None:
         with mock.patch(

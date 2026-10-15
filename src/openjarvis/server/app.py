@@ -12,6 +12,7 @@ from fastapi import FastAPI
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
+from openjarvis.security.confirmation import ConfirmationGate
 from openjarvis.server.analytics_routes import (
     configure_analytics,
     stop_analytics,
@@ -306,6 +307,11 @@ def create_app(
     app.state.capability_policy = capability_policy
     app.state.rate_limiter = rate_limiter
     app.state.audit_logger = audit_logger
+    # Shared confirmation gate: tool approvals granted via
+    # /v1/approvals/tool are consumed by the executors running agents.
+    # If a caller built an app without going through this factory, the
+    # approval routes fall back to a module-level gate instead.
+    app.state.confirmation_gate = ConfirmationGate()
     app.state.mcp_tools = list(mcp_tools or [])
     app.state._mcp_discovery_lock = threading.Lock()
     app.state._mcp_clients_lock = threading.Lock()

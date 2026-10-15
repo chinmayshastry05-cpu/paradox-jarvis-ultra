@@ -281,9 +281,12 @@ class TestAskAgentOption:
         agent_setup.config.tools.enabled = tools_enabled
         agent_setup.config.agent.tools = agent_tools
 
+        # The confirmation-gated tool prompts on the TTY: answer "y"
+        # like a human would. (There is no auto-approve path anymore.)
         result = runner.invoke(
             cli,
             ["ask", "--agent", "confirming_agent", "Hello"],
+            input="y\n",
         )
 
         assert result.exit_code == 0

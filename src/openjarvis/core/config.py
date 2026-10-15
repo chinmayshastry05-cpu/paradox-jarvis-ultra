@@ -1453,6 +1453,16 @@ class SecurityConfig:
     profile: str = ""
     # Directories file_read/file_write may touch; empty means unrestricted.
     allowed_dirs: List[str] = field(default_factory=list)
+    # Shell execution is DISABLED by default. Set true to opt in; the
+    # shell tool still requires a single-use, argument-bound approval
+    # for every command. (Env var OPENJARVIS_SHELL_ENABLED=1 is the
+    # equivalent opt-in.)
+    shell_enabled: bool = False
+    # Legacy path where the vault key used to be stored as a plaintext
+    # file next to the ciphertext. No longer used: vault keys now live
+    # in the OS keychain only (see security.keychain). Kept so existing
+    # config files still parse; a one-time migration imports a legacy
+    # key into the keychain and deletes the file.
     vault_key_path: str = field(
         default_factory=lambda: str(get_config_dir() / ".vault_key")
     )

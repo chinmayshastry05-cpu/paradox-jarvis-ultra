@@ -91,7 +91,11 @@ class DockerShellExecTool(BaseTool):
                 "required": ["command"],
             },
             category="system",
-            requires_confirmation=False,
+            # Container-scoped shell: still a shell, so it requires the
+            # same single-use, argument-bound approval as host shell_exec.
+            # It can only run when a task container is active (see
+            # execute()), which is an additional gate, not a substitute.
+            requires_confirmation=True,
             timeout_seconds=float(_MAX_TIMEOUT),
             required_capabilities=["code:execute"],
         )
