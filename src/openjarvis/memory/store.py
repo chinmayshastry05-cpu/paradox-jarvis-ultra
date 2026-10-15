@@ -396,6 +396,18 @@ def _ensure_fact_store_backends_registered() -> None:
     """Restore built-in fact-store registrations if a test cleared registries."""
     if not FactStoreRegistry.contains("local"):
         FactStoreRegistry.register_value("local", LocalFactStore)
+    if not FactStoreRegistry.contains("sqlite-facts"):
+        # Lazy import: sqlite_facts imports this module, so importing it at
+        # module level would be circular. Re-register the class value
+        # directly (rather than relying on the decorator) because registries
+        # may have been cleared after the submodule was first imported,
+        # which would make a re-import a no-op.
+        try:
+            from openjarvis.memory.sqlite_facts import SqliteFactStore
+
+            FactStoreRegistry.register_value("sqlite-facts", SqliteFactStore)
+        except Exception:  # noqa: BLE001 — fall back to local-only backends
+            pass
 
 
 def create_fact_store(

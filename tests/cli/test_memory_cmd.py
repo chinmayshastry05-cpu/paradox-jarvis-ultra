@@ -262,3 +262,108 @@ def test_memory_clear_empty(tmp_path: Path, monkeypatch):
     result = CliRunner().invoke(cli, ["memory", "clear"])
     assert result.exit_code == 0
     assert "No memory facts to clear" in result.output
+
+
+def _patch_sqlite_fact_store(monkeypatch, tmp_path: Path):
+    """Point ``jarvis memory remember/forget/show/correct/summary`` at a temp store."""
+    from openjarvis.memory.sqlite_facts import SqliteFactStore
+
+    mod = importlib.import_module("openjarvis.cli.memory_cmd")
+    store = SqliteFactStore(tmp_path / "facts.db")
+    monkeypatch.setattr(mod, "_get_sqlite_fact_store", lambda: store)
+    return store
+
+
+def test_memory_remember_and_show(tmp_path: Path, monkeypatch):
+    store = _patch_sqlite_fact_store(monkeypatch, tmp_path)
+
+    result = CliRunner().invoke(
+        cli, ["memory", "remember", "--source", "notes", "Mira Chen prefers tea"]
+    )
+    assert result.exit_code == 0
+    assert "Remembered" in result.output
+    assert store.count() == 1
+
+    result = CliRunner().invoke(cli, ["memory", "show"])
+    assert result.exit_code == 0
+    assert "Mira Chen prefers tea" in result.output
+    assert "notes" in result.output
+
+
+def test_memory_show_query_ranks(tmp_path: Path, monkeypatch):
+    store = _patch_sqlite_fact_store(monkeypatch, tmp_path)
+    store.remember("Mira Chen prefers tea over coffee")
+    store.remember("Mira Chen owns a red bicycle")
+
+    result = CliRunner().invoke(cli, ["memory", "show", "--query", "bicycle"])
+    assert result.exit_code == 0
+    assert "red bicycle" in result.output
+    assert "prefers tea" not in result.output
+
+
+def test_memory_show_empty(tmp_path: Path, monkeypatch):
+    _patch_sqlite_fact_store(monkeypatch, tmp_path)
+    result = CliRunner().invoke(cli, ["memory", "show"])
+    assert result.exit_code == 0
+    assert "No memory facts" in result.output
+
+
+def test_memory_forget_by_index(tmp_path: Path, monkeypatch):
+    store = _patch_sqlite_fact_store(monkeypatch, tmp_path)
+    store.remember("Mira Chen prefers tea")
+
+    result = CliRunner().invoke(cli, ["memory", "forget", "1", "--yes"])
+    assert result.exit_code == 0
+    assert "Forgot" in result.output
+    assert store.count() == 0
+    assert store.retrieve("tea") == []
+
+
+def test_memory_forget_unknown_ref(tmp_path: Path, monkeypatch):
+    _patch_sqlite_fact_store(monkeypatch, tmp_path)
+    result = CliRunner().invoke(cli, ["memory", "forget", "nope", "--yes"])
+    assert result.exit_code != 0
+    assert "No fact matching" in result.output
+
+
+def test_memory_correct_supersedes(tmp_path: Path, monkeypatch):
+    store = _patch_sqlite_fact_store(monkeypatch, tmp_path)
+    store.remember("The office printer is on the third floor")
+
+    result = CliRunner().invoke(
+        cli,
+        ["memory", "correct", "1", "The office printer is on the fourth floor"],
+    )
+    assert result.exit_code == 0
+    assert "Corrected" in result.output
+    assert store.retrieve("printer third floor") == []
+    assert store.retrieve("printer fourth floor")[0].fact.text.endswith(
+        "fourth floor"
+    )
+
+
+def test_memory_correct_unknown_ref(tmp_path: Path, monkeypatch):
+    _patch_sqlite_fact_store(monkeypatch, tmp_path)
+    result = CliRunner().invoke(cli, ["memory", "correct", "1", "new text"])
+    assert result.exit_code != 0
+    assert "No fact matching" in result.output
+
+
+def test_memory_summary_groups_by_source(tmp_path: Path, monkeypatch):
+    store = _patch_sqlite_fact_store(monkeypatch, tmp_path)
+    store.remember("chat fact one", source="chat")
+    store.remember("chat fact two", source="chat")
+    store.remember("notes fact", source="notes")
+
+    result = CliRunner().invoke(cli, ["memory", "summary"])
+    assert result.exit_code == 0
+    assert "chat" in result.output
+    assert "notes" in result.output
+    assert "chat fact two" in result.output
+
+
+def test_memory_summary_empty(tmp_path: Path, monkeypatch):
+    _patch_sqlite_fact_store(monkeypatch, tmp_path)
+    result = CliRunner().invoke(cli, ["memory", "summary"])
+    assert result.exit_code == 0
+    assert "No memory facts" in result.output

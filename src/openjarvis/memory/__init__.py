@@ -14,6 +14,14 @@ from openjarvis.memory.service import (
     build_memory_service,
     publish_completed_exchange,
 )
+from openjarvis.memory.sqlite_facts import (
+    SCOPE_GLOBAL,
+    STATUS_ACTIVE,
+    STATUS_SUPERSEDED,
+    ScoredFact,
+    SqliteFactStore,
+    StructuredFact,
+)
 from openjarvis.memory.store import (
     Fact,
     FactStore,
@@ -28,6 +36,12 @@ __all__ = [
     "FactExtractor",
     "LocalFactStore",
     "MemoryService",
+    "SCOPE_GLOBAL",
+    "STATUS_ACTIVE",
+    "STATUS_SUPERSEDED",
+    "ScoredFact",
+    "SqliteFactStore",
+    "StructuredFact",
     "build_memory_service",
     "create_fact_store",
     "load_configured_facts",
