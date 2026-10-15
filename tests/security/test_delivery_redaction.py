@@ -154,3 +154,29 @@ def test_research_sse_malformed_event_never_emits_raw():
     cyclic["self"] = cyclic
     frame = _sse(cyclic)  # type: ignore[arg-type]
     assert "self" in frame  # placeholder frame still serialises
+
+
+def test_streaming_redactor_clean_tokens_stream_immediately():
+    """Clean tokens are not batched: only a suspicious tail is held."""
+    redactor = StreamingRedactor()
+    assert redactor.feed("Hello") == "Hello"
+    assert redactor.feed(" ") == " "
+    assert redactor.feed("world") == "world"
+    assert redactor.flush() == ""
+
+
+def test_streaming_redactor_flush_replaces_strong_partial_fragment():
+    redactor = StreamingRedactor()
+    assert redactor.feed("hello sk-abc") == "hello "
+    assert redactor.flush() == "[REDACTED:partial-secret]"
+
+
+def test_streaming_redactor_split_secret_single_char_pieces():
+    """A secret split inside its literal prefix is still caught."""
+    redactor = StreamingRedactor()
+    emitted = [redactor.feed("s"), redactor.feed("k-")]
+    emitted.append(redactor.feed("abcdefghij1234567890ABCD end"))
+    emitted.append(redactor.flush())
+    joined = "".join(emitted)
+    assert "sk-abcdefghij1234567890ABCD" not in joined
+    assert "[REDACTED:openai_key]" in joined

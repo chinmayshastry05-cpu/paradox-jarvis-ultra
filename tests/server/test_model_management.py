@@ -156,7 +156,7 @@ class TestStreamingResilience:
 
         async def failing_stream(messages, *, model, **kw):
             yield "partial"
-            raise RuntimeError("model not found")
+            raise RuntimeError("model not found sk-abcdefghij1234567890ABCD")
 
         engine.stream = failing_stream
         app = create_app(engine, "test-model")
@@ -172,10 +172,14 @@ class TestStreamingResilience:
         )
         assert resp.status_code == 200
 
-        # Should contain partial content + error message + [DONE]
+        # Partial content + a generic error chunk + [DONE]. Exception
+        # text is never delivered: it may carry secrets (fail-closed
+        # delivery redaction); the full exception stays in server logs.
         text = resp.text
         assert "partial" in text
-        assert "model not found" in text
+        assert "model not found" not in text
+        assert "sk-abcdefghij1234567890ABCD" not in text
+        assert "An error occurred while streaming." in text
         assert "[DONE]" in text
 
     def test_stream_tokens_arrive(self):

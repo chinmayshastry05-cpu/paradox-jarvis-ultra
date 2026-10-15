@@ -34,12 +34,14 @@ event, one tool result) must use :func:`redact_text` /
 Boundary (cannot be fixed at this layer, documented so callers do not
 assume otherwise):
 
-* Segments already emitted cannot be retracted. The redactor holds a
-  tail (default 1024 chars) plus any trailing partial-pattern prefix, so
-  secrets up to that length split across tokens are caught. A secret
-  longer than the holdback whose prefix alone matches no pattern could
-  leak its leading bytes before the pattern becomes recognisable — an
-  inherent limit of streaming redaction, not of whole-payload redaction.
+* Segments already emitted cannot be retracted. The redactor holds
+  back only a trailing suffix that could grow into a secret (a
+  complete match at the buffer end, a partial-pattern match, or a
+  literal pattern prefix), so a secret split across tokens of one
+  payload is caught however long it is, while clean tokens still
+  stream immediately. The residual limit: a secret whose pattern is
+  not in the scanner's list cannot be recognised at all — same as
+  whole-payload redaction.
 * A secret deliberately split across two *discrete* named events, with
   neither half matching a pattern on its own, is not reconstructed.
   Callers must not split one logical payload across discrete events.
@@ -218,39 +220,92 @@ def safe_error_message(kind: str = "stream") -> str:
     return messages.get(kind, messages["stream"])
 
 
-def _emit_cut(buffer: str, emit_end: int) -> int:
-    """Shrink *emit_end* so no emitted prefix starts an unfinished secret.
+# Literal prefixes of the secret patterns above. Every secret starts
+# with one of these, so any fragment that is a prefix of a secret is
+# either a prefix of one of these literals, a partial-pattern match, or
+# already a complete match. Used to hold back a suffix that could grow
+# into a secret on the next token.
+_LITERAL_PREFIXES: tuple[str, ...] = (
+    "sk-",
+    "sk-ant-",
+    "AKIA",
+    "ghp_",
+    "gho_",
+    "ghs_",
+    "ghr_",
+    "github_pat_",
+    "password",
+    "passwd",
+    "pwd",
+    "postgres://",
+    "mysql://",
+    "mongodb://",
+    "redis://",
+    "-----BEGIN ",
+    "-----BEGIN RSA PRIVATE KEY-----",
+    "xoxb-",
+    "xoxp-",
+    "xoxo-",
+    "xoxr-",
+    "xoxs-",
+    "sk_live_",
+    "sk_test_",
+    "pk_live_",
+    "pk_test_",
+    "api_key",
+    "secret_key",
+    "auth_token",
+)
+_MAX_BUFFERED = 65536
 
-    A secret may start inside the emit prefix and continue into the held
-    tail (crossing match), or start inside the emit prefix and run past
-    the end of the buffer so far (partial match). In either case the
-    emit prefix is cut at the secret's start and the remainder stays
-    held. Redacting each small emit slice in isolation would leak such
-    a secret piece by piece, so the boundary check runs on the whole
-    buffer, not on the slice alone.
+
+def _suspicious_start(buffer: str, *, final: bool = False) -> int:
+    """Earliest index of a suffix of *buffer* that may become a secret.
+
+    Returns ``len(buffer)`` when no suffix is suspicious. A suffix is
+    suspicious when it is: a complete-pattern match ending exactly at
+    the end (extendable — only while streaming, ``final=False``), a
+    partial-pattern match ending at the end, or — while streaming — a
+    proper prefix of a literal pattern prefix. At ``final=True`` a
+    literal-prefix-only suffix is emitted raw: it is not a usable
+    secret (a single char such as ``"s"``), while a strong partial
+    match is replaced by a marker by :meth:`StreamingRedactor.flush`.
     """
-    for _, pattern in _FALLBACK_COMPILED:
-        for match in pattern.finditer(buffer):
-            if match.start() < emit_end < match.end():
-                emit_end = match.start()
+    end = len(buffer)
+    cut = end
+    if not final:
+        for _, pattern in _FALLBACK_COMPILED:
+            for match in pattern.finditer(buffer):
+                if match.end() == end and match.start() < cut:
+                    cut = match.start()
     for pattern in _PARTIAL_COMPILED:
         match = pattern.search(buffer)
-        if match and match.start() < emit_end and match.end() == len(buffer):
-            emit_end = min(emit_end, match.start())
-    return emit_end
+        if match and match.end() == end and match.start() < cut:
+            cut = match.start()
+    if not final:
+        for literal in _LITERAL_PREFIXES:
+            for k in range(1, len(literal)):
+                if buffer.endswith(literal[:k]) and end - k < cut:
+                    cut = end - k
+    return cut
 
 
 class StreamingRedactor:
     """Buffer token streams so split secrets are redacted before emission.
 
-    :meth:`feed` returns only the prefix that is safe to emit now: the
-    trailing ``holdback`` chars plus any trailing partial-pattern prefix
-    are held. :meth:`flush` redacts and returns the remainder. See the
-    module docstring for the boundary (secrets longer than the holdback
-    whose prefix matches no pattern).
+    :meth:`feed` emits the incoming text immediately *except* for a
+    trailing suffix that could grow into a secret on the next token
+    (see :func:`_suspicious_start`). Clean tokens therefore still
+    stream token-by-token; only a suspicious tail is held. A secret
+    split across tokens is recognised once its final token arrives,
+    before any of its bytes were emitted. :meth:`flush` redacts the
+    remainder, replacing a trailing strong partial-secret fragment
+    with a marker. See the module docstring for the boundary.
     """
 
     def __init__(self, holdback: int = 1024) -> None:
+        # Retained for call-site compatibility; holding is suffix-driven,
+        # not length-driven. The value is unused beyond the cap below.
         self._holdback = max(0, int(holdback))
         self._buffer = ""
 
@@ -258,16 +313,27 @@ class StreamingRedactor:
         if not isinstance(text, str) or not text:
             return ""
         self._buffer += text
-        if len(self._buffer) <= self._holdback:
+        if len(self._buffer) > _MAX_BUFFERED:
+            # Bounded fail-closed: never emit an unbounded suspicious
+            # suffix; drop it behind a marker instead of leaking it.
+            cut = _suspicious_start(self._buffer)
+            buffered, self._buffer = self._buffer, ""
+            emit = redact_text(buffered[:cut])
+            if cut < len(buffered):
+                emit += "[REDACTED:overlong-partial-secret]"
+            return emit
+        cut = _suspicious_start(self._buffer)
+        if cut <= 0:
             return ""
-        emit_end = _emit_cut(self._buffer, len(self._buffer) - self._holdback)
-        if emit_end <= 0:
-            return ""
-        emit, self._buffer = self._buffer[:emit_end], self._buffer[emit_end:]
+        emit, self._buffer = self._buffer[:cut], self._buffer[cut:]
         return redact_text(emit)
 
     def flush(self) -> str:
         remainder, self._buffer = self._buffer, ""
         if not remainder:
             return ""
-        return redact_text(remainder)
+        cut = _suspicious_start(remainder, final=True)
+        out = redact_text(remainder[:cut])
+        if cut < len(remainder):
+            out += "[REDACTED:partial-secret]"
+        return out
