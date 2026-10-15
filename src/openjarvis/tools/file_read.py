@@ -51,11 +51,10 @@ class FileReadTool(BaseTool):
         )
 
     def _is_path_allowed(self, path: Path) -> bool:
-        """Check if path is within allowed directories.
+        """Pre-check only (see :mod:`openjarvis.security.canonical_path`).
 
-        Canonical check: symlinks (including in parent directories) are
-        resolved before containment is tested, so a symlink inside an
-        allowed root cannot smuggle access to files outside it.
+        Authorisation happens in :func:`open_within` at open time;
+        this helper exists for callers that need a cheap pre-check.
         """
         from openjarvis.security.canonical_path import is_within
 
@@ -82,50 +81,124 @@ class FileReadTool(BaseTool):
                 content=f"Access denied: {file_path} is a sensitive file.",
                 success=False,
             )
-        if not path.exists():
-            return ToolResult(
-                tool_name="file_read",
-                content=f"File not found: {file_path}",
-                success=False,
-            )
-        if not path.is_file():
-            return ToolResult(
-                tool_name="file_read",
-                content=f"Not a file: {file_path}",
-                success=False,
-            )
-        if not self._is_path_allowed(path):
+        # Open via descriptors: containment, symlink resolution and the
+        # open are one operation — a path swapped between a string
+        # check and the open cannot redirect this read. The Rust
+        # path-based reader is deliberately not used here: it would
+        # re-open the path by string and re-introduce the race.
+        import os
+        import stat as _stat
+
+        from openjarvis.security.canonical_path import (
+            UnsafePathError,
+            UnsupportedPlatformError,
+            open_within,
+        )
+
+        try:
+            fd, resolved = open_within(path, self._allowed_dirs, flags=os.O_RDONLY)
+        except UnsafePathError:
             return ToolResult(
                 tool_name="file_read",
                 content=f"Access denied: {file_path} is outside allowed directories.",
                 success=False,
             )
-        # Check size
-        try:
-            size = path.stat().st_size
+        except UnsupportedPlatformError:
+            if self._allowed_dirs:
+                # No safe open available and a boundary is configured:
+                # refuse rather than fall back to a racy string open.
+                return ToolResult(
+                    tool_name="file_read",
+                    content=(
+                        f"Access denied: {file_path} cannot be opened "
+                        "safely on this platform."
+                    ),
+                    success=False,
+                )
+            return self._legacy_read(path, file_path, params)
+        except FileNotFoundError:
+            return ToolResult(
+                tool_name="file_read",
+                content=f"File not found: {file_path}",
+                success=False,
+            )
+        except IsADirectoryError:
+            return ToolResult(
+                tool_name="file_read",
+                content=f"Not a file: {file_path}",
+                success=False,
+            )
         except OSError as exc:
             return ToolResult(
                 tool_name="file_read",
-                content=f"Cannot stat file: {exc}",
-                success=False,
-            )
-        if size > _MAX_SIZE_BYTES:
-            return ToolResult(
-                tool_name="file_read",
-                content=f"File too large: {size} bytes (max {_MAX_SIZE_BYTES}).",
+                content=f"Read error: {exc}",
                 success=False,
             )
         try:
-            from openjarvis._rust_bridge import get_rust_module
+            st = os.fstat(fd)
+            if not _stat.S_ISREG(st.st_mode):
+                return ToolResult(
+                    tool_name="file_read",
+                    content=f"Not a file: {file_path}",
+                    success=False,
+                )
+            size = st.st_size
+            if size > _MAX_SIZE_BYTES:
+                return ToolResult(
+                    tool_name="file_read",
+                    content=f"File too large: {size} bytes (max {_MAX_SIZE_BYTES}).",
+                    success=False,
+                )
+            chunks: list[bytes] = []
+            while True:
+                chunk = os.read(fd, 1024 * 1024)
+                if not chunk:
+                    break
+                chunks.append(chunk)
+            raw = b"".join(chunks)
+        except OSError as exc:
+            return ToolResult(
+                tool_name="file_read",
+                content=f"Read error: {exc}",
+                success=False,
+            )
+        finally:
+            os.close(fd)
+        try:
+            text = raw.decode("utf-8")
+        except UnicodeDecodeError:
+            text = raw.decode("utf-8", errors="replace")
+        max_lines = params.get("max_lines")
+        if max_lines is not None and max_lines > 0:
+            lines = text.splitlines(keepends=True)
+            text = "".join(lines[:max_lines])
+        return ToolResult(
+            tool_name="file_read",
+            content=text,
+            success=True,
+            metadata={"path": str(resolved), "size_bytes": size},
+        )
 
-            _rust = get_rust_module()
-            text = _rust.FileReadTool().execute(str(path))
-        except ImportError:
-            try:
-                text = path.read_text(encoding="utf-8")
-            except UnicodeDecodeError:
-                text = path.read_text(encoding="utf-8", errors="replace")
-        except Exception as exc:
+    def _legacy_read(self, path, file_path, params):
+        """Plain string open, only when no boundary is configured and the
+        platform has no descriptor open. No containment is claimed."""
+        try:
+            text = path.read_text(encoding="utf-8")
+        except FileNotFoundError:
+            return ToolResult(
+                tool_name="file_read",
+                content=f"File not found: {file_path}",
+                success=False,
+            )
+        except IsADirectoryError:
+            return ToolResult(
+                tool_name="file_read",
+                content=f"Not a file: {file_path}",
+                success=False,
+            )
+        except UnicodeDecodeError:
+            text = path.read_text(encoding="utf-8", errors="replace")
+        except OSError as exc:
             return ToolResult(
                 tool_name="file_read",
                 content=f"Read error: {exc}",
@@ -135,11 +208,15 @@ class FileReadTool(BaseTool):
         if max_lines is not None and max_lines > 0:
             lines = text.splitlines(keepends=True)
             text = "".join(lines[:max_lines])
+        try:
+            size = path.stat().st_size
+        except OSError:
+            size = len(text.encode("utf-8"))
         return ToolResult(
             tool_name="file_read",
             content=text,
             success=True,
-            metadata={"path": str(path.resolve()), "size_bytes": size},
+            metadata={"path": str(path), "size_bytes": size},
         )
 
 

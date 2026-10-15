@@ -67,11 +67,10 @@ class FileWriteTool(BaseTool):
         )
 
     def _is_path_allowed(self, path: Path) -> bool:
-        """Check if path is within allowed directories.
+        """Pre-check only (see :mod:`openjarvis.security.canonical_path`).
 
-        Canonical check: symlinks (including in parent directories) are
-        resolved before containment is tested, so a symlink inside an
-        allowed root cannot smuggle writes to files outside it.
+        Authorisation happens in :func:`open_within` at open time;
+        this helper exists for callers that need a cheap pre-check.
         """
         from openjarvis.security.canonical_path import is_within
 
@@ -119,13 +118,6 @@ class FileWriteTool(BaseTool):
                 success=False,
             )
 
-        if not self._is_path_allowed(path):
-            return ToolResult(
-                tool_name="file_write",
-                content=f"Access denied: {file_path} is outside allowed directories.",
-                success=False,
-            )
-
         # Check content size before writing
         content_bytes = content.encode("utf-8")
         if len(content_bytes) > _MAX_SIZE_BYTES:
@@ -138,77 +130,144 @@ class FileWriteTool(BaseTool):
                 success=False,
             )
 
-        # Create parent directories if requested
+        import os
+
+        from openjarvis.security.canonical_path import (
+            UnsafePathError,
+            UnsupportedPlatformError,
+            ensure_parent_within,
+            open_for_write_within,
+        )
+
+        # Parent directories: created via descriptors when requested,
+        # never by following a string path. Without create_dirs a
+        # missing parent is an error, as before.
         if create_dirs:
             try:
-                path.parent.mkdir(parents=True, exist_ok=True)
+                ensure_parent_within(path, self._allowed_dirs)
+            except UnsafePathError:
+                return ToolResult(
+                    tool_name="file_write",
+                    content=(
+                        f"Access denied: {file_path} is outside allowed directories."
+                    ),
+                    success=False,
+                )
+            except UnsupportedPlatformError:
+                if self._allowed_dirs:
+                    return ToolResult(
+                        tool_name="file_write",
+                        content=(
+                            f"Access denied: {file_path} cannot be opened "
+                            "safely on this platform."
+                        ),
+                        success=False,
+                    )
+                try:
+                    path.parent.mkdir(parents=True, exist_ok=True)
+                except OSError as exc:
+                    return ToolResult(
+                        tool_name="file_write",
+                        content=f"Cannot create directories: {exc}",
+                        success=False,
+                    )
             except OSError as exc:
                 return ToolResult(
                     tool_name="file_write",
                     content=f"Cannot create directories: {exc}",
                     success=False,
                 )
-        else:
-            if not path.parent.exists():
+
+        # Open via descriptors: containment, symlink resolution and
+        # the open are one operation. The Rust path-based writer is
+        # deliberately not used: it would re-open by string and
+        # re-introduce the race.
+        try:
+            fd, resolved = open_for_write_within(
+                path,
+                self._allowed_dirs,
+                append=(mode == "append"),
+                create=True,
+            )
+        except UnsafePathError:
+            return ToolResult(
+                tool_name="file_write",
+                content=f"Access denied: {file_path} is outside allowed directories.",
+                success=False,
+            )
+        except UnsupportedPlatformError:
+            if self._allowed_dirs:
                 return ToolResult(
                     tool_name="file_write",
                     content=(
-                        f"Parent directory does not exist: {path.parent}."
-                        " Set create_dirs=true to create it."
+                        f"Access denied: {file_path} cannot be opened "
+                        "safely on this platform."
                     ),
                     success=False,
                 )
-
-        if mode == "write":
-            try:
-                from openjarvis._rust_bridge import get_rust_module
-
-                _rust = get_rust_module()
-                _rust.FileWriteTool().execute(str(path), content)
-            except ImportError:
-                try:
-                    path.write_text(content, encoding="utf-8")
-                except OSError as exc:
-                    return ToolResult(
-                        tool_name="file_write",
-                        content=f"Write error: {exc}",
-                        success=False,
-                    )
-            except Exception as exc:
-                return ToolResult(
-                    tool_name="file_write",
-                    content=f"Write error: {exc}",
-                    success=False,
-                )
-        else:
-            # append mode — always Python
-            try:
-                with open(path, "a", encoding="utf-8") as f:
-                    f.write(content)
-            except PermissionError as exc:
-                return ToolResult(
-                    tool_name="file_write",
-                    content=f"Permission denied: {exc}",
-                    success=False,
-                )
-            except OSError as exc:
-                return ToolResult(
-                    tool_name="file_write",
-                    content=f"Write error: {exc}",
-                    success=False,
-                )
-
-        # Get final file size
+            return self._legacy_write(path, file_path, content_bytes)
+        except FileNotFoundError:
+            return ToolResult(
+                tool_name="file_write",
+                content=(
+                    f"Parent directory does not exist: {path.parent}."
+                    " Set create_dirs=true to create it."
+                ),
+                success=False,
+            )
+        except IsADirectoryError:
+            return ToolResult(
+                tool_name="file_write",
+                content=f"Not a file: {file_path}",
+                success=False,
+            )
+        except OSError as exc:
+            return ToolResult(
+                tool_name="file_write",
+                content=f"Write error: {exc}",
+                success=False,
+            )
         try:
-            size = path.stat().st_size
-        except OSError:
-            size = len(content_bytes)
-
+            view = memoryview(content_bytes)
+            while view:
+                written = os.write(fd, view)
+                view = view[written:]
+            size = os.fstat(fd).st_size
+        except OSError as exc:
+            return ToolResult(
+                tool_name="file_write",
+                content=f"Write error: {exc}",
+                success=False,
+            )
+        finally:
+            os.close(fd)
         return ToolResult(
             tool_name="file_write",
             content=f"Successfully wrote to {file_path}",
             success=True,
-            metadata={"path": str(path.resolve()), "size_bytes": size},
+            metadata={"path": str(resolved), "size_bytes": size},
+        )
+
+    def _legacy_write(self, path, file_path, content_bytes):
+        """Plain string write, only when no boundary is configured and
+        the platform has no descriptor open. No containment is claimed."""
+        try:
+            path.write_bytes(content_bytes)
+        except OSError as exc:
+            return ToolResult(
+                tool_name="file_write",
+                content=f"Write error: {exc}",
+                success=False,
+            )
+        try:
+            size = path.stat().st_size
+        except OSError:
+            size = len(content_bytes)
+        return ToolResult(
+            tool_name="file_write",
+            content=f"Successfully wrote to {file_path}",
+            success=True,
+            metadata={"path": str(path), "size_bytes": size},
         )
 
 

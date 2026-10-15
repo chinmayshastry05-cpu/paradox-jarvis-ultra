@@ -271,82 +271,193 @@ class ApplyPatchTool(BaseTool):
                 success=False,
             )
 
-        # Canonical path check: resolve symlinks, reject escapes from
-        # allowed roots. A patch targeting a symlink inside an allowed
-        # root that points outside must not write outside.
-        from openjarvis.security.canonical_path import resolve_within
+        # Open via descriptors (read/write, one held fd): containment,
+        # symlink resolution and the open are one operation, and the
+        # same inode is read, backed up and rewritten — a path swapped
+        # between a string check and the open, or between the read
+        # and the write, cannot redirect this patch.
+        import os
+        import stat as _stat
 
+        from openjarvis.security.canonical_path import (
+            UnsafePathError,
+            UnsupportedPlatformError,
+            open_for_write_within,
+            open_rdwr_within,
+        )
+
+        fd: int | None = None
+        resolved = path
         try:
-            path = resolve_within(path, self._allowed_dirs)
-        except ValueError as exc:
+            fd, resolved = open_rdwr_within(path, self._allowed_dirs)
+        except UnsafePathError as exc:
             return ToolResult(
                 tool_name="apply_patch",
                 content=f"Access denied: {exc}",
                 success=False,
             )
-
-        # Check file exists
-        if not path.exists():
+        except UnsupportedPlatformError:
+            if self._allowed_dirs:
+                return ToolResult(
+                    tool_name="apply_patch",
+                    content=(
+                        f"Access denied: {target} cannot be opened "
+                        "safely on this platform."
+                    ),
+                    success=False,
+                )
+            # No boundary configured: legacy string path (no containment
+            # is claimed on this platform).
+        except FileNotFoundError:
             return ToolResult(
                 tool_name="apply_patch",
                 content=f"File not found: {target}",
                 success=False,
             )
-
-        if not path.is_file():
+        except IsADirectoryError:
             return ToolResult(
                 tool_name="apply_patch",
                 content=f"Not a file: {target}",
                 success=False,
             )
-
-        # Read original content
-        try:
-            original = path.read_text(encoding="utf-8")
-        except (OSError, UnicodeDecodeError) as exc:
+        except PermissionError as exc:
+            return ToolResult(
+                tool_name="apply_patch",
+                content=f"Write failed: {exc}",
+                success=False,
+            )
+        except OSError as exc:
             return ToolResult(
                 tool_name="apply_patch",
                 content=f"Cannot read file: {exc}",
                 success=False,
             )
 
-        # Apply hunks
         try:
-            patched = _apply_hunks(original, hunks)
-        except ValueError as exc:
-            return ToolResult(
-                tool_name="apply_patch",
-                content=f"Patch failed: {exc}",
-                success=False,
-            )
+            if fd is not None:
+                st = os.fstat(fd)
+                if not _stat.S_ISREG(st.st_mode):
+                    return ToolResult(
+                        tool_name="apply_patch",
+                        content=f"Not a file: {target}",
+                        success=False,
+                    )
+                chunks: list[bytes] = []
+                while True:
+                    chunk = os.read(fd, 1024 * 1024)
+                    if not chunk:
+                        break
+                    chunks.append(chunk)
+                original_bytes = b"".join(chunks)
+                try:
+                    original = original_bytes.decode("utf-8")
+                except UnicodeDecodeError as exc:
+                    return ToolResult(
+                        tool_name="apply_patch",
+                        content=f"Cannot read file: {exc}",
+                        success=False,
+                    )
+            else:
+                if not path.is_file():
+                    return ToolResult(
+                        tool_name="apply_patch",
+                        content=f"Not a file: {target}",
+                        success=False,
+                    )
+                try:
+                    original = path.read_text(encoding="utf-8")
+                except (OSError, UnicodeDecodeError) as exc:
+                    return ToolResult(
+                        tool_name="apply_patch",
+                        content=f"Cannot read file: {exc}",
+                        success=False,
+                    )
+                original_bytes = original.encode("utf-8")
 
-        # Backup
-        backup = params.get("backup", True)
-        backup_path: Optional[str] = None
-        if backup:
-            bak = Path(str(path) + ".bak")
+            # Apply hunks
             try:
-                shutil.copy2(str(path), str(bak))
-                backup_path = str(bak)
-            except OSError as exc:
+                patched = _apply_hunks(original, hunks)
+            except ValueError as exc:
                 return ToolResult(
                     tool_name="apply_patch",
-                    content=f"Backup failed: {exc}",
+                    content=f"Patch failed: {exc}",
                     success=False,
                 )
 
-        # Write patched content
-        try:
-            path.write_text(patched, encoding="utf-8")
-        except OSError as exc:
-            return ToolResult(
-                tool_name="apply_patch",
-                content=f"Write failed: {exc}",
-                success=False,
-            )
+            # Backup (descriptor open for the .bak file too, so a
+            # swapped backup symlink cannot redirect the copy).
+            backup = params.get("backup", True)
+            backup_path: Optional[str] = None
+            if backup:
+                if fd is not None:
+                    bak_target = Path(str(resolved) + ".bak")
+                    try:
+                        bak_fd, bak_resolved = open_for_write_within(
+                            bak_target, self._allowed_dirs, create=True
+                        )
+                    except (UnsafePathError, OSError) as exc:
+                        return ToolResult(
+                            tool_name="apply_patch",
+                            content=f"Backup failed: {exc}",
+                            success=False,
+                        )
+                    try:
+                        view = memoryview(original_bytes)
+                        while view:
+                            written = os.write(bak_fd, view)
+                            view = view[written:]
+                    except OSError as exc:
+                        return ToolResult(
+                            tool_name="apply_patch",
+                            content=f"Backup failed: {exc}",
+                            success=False,
+                        )
+                    finally:
+                        os.close(bak_fd)
+                    backup_path = str(bak_resolved)
+                else:
+                    bak = Path(str(path) + ".bak")
+                    try:
+                        shutil.copy2(str(path), str(bak))
+                        backup_path = str(bak)
+                    except OSError as exc:
+                        return ToolResult(
+                            tool_name="apply_patch",
+                            content=f"Backup failed: {exc}",
+                            success=False,
+                        )
+
+            # Write patched content to the same held fd (same inode).
+            if fd is not None:
+                try:
+                    patched_bytes = patched.encode("utf-8")
+                    os.lseek(fd, 0, os.SEEK_SET)
+                    os.ftruncate(fd, 0)
+                    view = memoryview(patched_bytes)
+                    while view:
+                        written = os.write(fd, view)
+                        view = view[written:]
+                except OSError as exc:
+                    return ToolResult(
+                        tool_name="apply_patch",
+                        content=f"Write failed: {exc}",
+                        success=False,
+                    )
+            else:
+                try:
+                    path.write_text(patched, encoding="utf-8")
+                except OSError as exc:
+                    return ToolResult(
+                        tool_name="apply_patch",
+                        content=f"Write failed: {exc}",
+                        success=False,
+                    )
+        finally:
+            if fd is not None:
+                os.close(fd)
 
         metadata: dict[str, Any] = {
-            "path": str(path.resolve()),
+            "path": str(resolved),
             "hunks_applied": len(hunks),
         }
         if backup_path:
