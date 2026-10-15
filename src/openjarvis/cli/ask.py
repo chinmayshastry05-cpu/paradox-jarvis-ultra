@@ -29,6 +29,7 @@ from openjarvis.intelligence import (
     merge_discovered_models,
     register_builtin_models,
 )
+from openjarvis.security.delivery_redaction import redact_value
 from openjarvis.telemetry.instrumented_engine import InstrumentedEngine
 from openjarvis.telemetry.store import TelemetryStore
 
@@ -210,38 +211,43 @@ def _run_research(
         result.usage,
     )
 
-    if output_json:
-        click.echo(
-            json_mod.dumps(
+    # Terminal / JSON output is a delivery surface: redact the whole
+    # answer and the structured tool-call fields before either print.
+    # The original result object is left untouched for the logger above.
+    _delivered = redact_value(
+        {
+            "answer": result.answer,
+            "tool_calls": [
                 {
-                    "answer": result.answer,
-                    "iterations": result.iterations,
-                    "usage": result.usage,
-                    "tool_calls": [
-                        {
-                            "arguments": inv.arguments,
-                            "num_results": inv.num_results,
-                            "top_titles": inv.top_titles,
-                        }
-                        for inv in result.tool_calls
-                    ],
-                },
-                indent=2,
-            )
-        )
+                    "arguments": inv.arguments,
+                    "num_results": inv.num_results,
+                    "top_titles": inv.top_titles,
+                }
+                for inv in result.tool_calls
+            ],
+            "iterations": result.iterations,
+            "usage": result.usage,
+        }
+    )
+    if not isinstance(_delivered, dict):
+        _delivered = {"answer": "", "tool_calls": []}
+    _answer = _delivered.get("answer", "") or ""
+
+    if output_json:
+        click.echo(json_mod.dumps(_delivered, indent=2))
         return
 
     # Visual break between live traces and the synthesis.
     trace.print()
 
     # Render the synthesis as Markdown with inline citations coloured cyan.
-    answer_console.print(Markdown(_style_citations(result.answer)))
+    answer_console.print(Markdown(_style_citations(_answer)))
 
     # Footer: how long it took + how many distinct sources the model
     # actually cited. Empty answers (rare; only if the model went silent)
     # skip the footer entirely.
-    if result.answer:
-        cited = {int(n) for n in re.findall(r"\[(\d+)\]", result.answer)}
+    if _answer:
+        cited = {int(n) for n in re.findall(r"\[(\d+)\]", _answer)}
         src_word = "source" if len(cited) == 1 else "sources"
         # Report the model and engine that actually served the query rather
         # than hardcoding: planner_model is the resolved model passed to the

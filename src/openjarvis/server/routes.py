@@ -15,6 +15,12 @@ from fastapi.responses import StreamingResponse
 
 from openjarvis.core.paths import get_config_dir
 from openjarvis.core.types import Message, Role, ToolCall
+from openjarvis.security.delivery_redaction import (
+    StreamingRedactor,
+    redact_text,
+    redact_value,
+    safe_error_message,
+)
 from openjarvis.server.model_capabilities import is_embed_only_model
 from openjarvis.server.models import (
     ChatCompletionChunk,
@@ -523,24 +529,26 @@ def _handle_direct(
             max_tokens=req.max_tokens,
             **kwargs,
         )
-    content = result.get("content", "")
+    content = redact_text(result.get("content", "") or "")
     usage = result.get("usage", {})
 
     choice_msg = ChoiceMessage(role="assistant", content=content)
     # Include tool calls if present
     tool_calls = result.get("tool_calls")
     if tool_calls:
-        choice_msg.tool_calls = [
-            {
-                "id": tc.get("id", ""),
-                "type": "function",
-                "function": {
-                    "name": tc.get("name", ""),
-                    "arguments": tc.get("arguments", "{}"),
-                },
-            }
-            for tc in tool_calls
-        ]
+        choice_msg.tool_calls = redact_value(
+            [
+                {
+                    "id": tc.get("id", ""),
+                    "type": "function",
+                    "function": {
+                        "name": tc.get("name", ""),
+                        "arguments": tc.get("arguments", "{}"),
+                    },
+                }
+                for tc in tool_calls
+            ]
+        )
 
     return ChatCompletionResponse(
         model=model,
@@ -729,7 +737,7 @@ async def _handle_agent_stream(
                 choices=[
                     StreamChoice(
                         delta=DeltaMessage(
-                            content=f"Sorry, an error occurred: {exc}",
+                            content=safe_error_message("chat"),
                         ),
                         finish_reason="stop",
                     )
@@ -739,7 +747,9 @@ async def _handle_agent_stream(
             yield "data: [DONE]\n\n"
             return
 
-        content = _response_content(response)
+        # Whole response redacted before delivery (engine guardrails
+        # may not have scanned it).
+        content = redact_text(_response_content(response))
         if content:
             content_chunk = ChatCompletionChunk(
                 id=chunk_id,
@@ -817,6 +827,7 @@ async def _handle_stream_tools(
 
     async def generate():
         full_content = ""
+        _redactor = StreamingRedactor()
         # Send the role chunk first (OpenAI convention).
         first_chunk = ChatCompletionChunk(
             id=chunk_id,
@@ -835,19 +846,27 @@ async def _handle_stream_tools(
                 tools=req.tools,
             ):
                 if sc.content:
-                    full_content += sc.content
-                    content_chunk = ChatCompletionChunk(
-                        id=chunk_id,
-                        model=model,
-                        choices=[StreamChoice(delta=DeltaMessage(content=sc.content))],
-                    )
-                    yield f"data: {content_chunk.model_dump_json()}\n\n"
+                    # Buffer tokens so a secret split across tokens is
+                    # redacted before any of its bytes are emitted.
+                    safe = _redactor.feed(sc.content)
+                    full_content += safe
+                    if safe:
+                        content_chunk = ChatCompletionChunk(
+                            id=chunk_id,
+                            model=model,
+                            choices=[StreamChoice(delta=DeltaMessage(content=safe))],
+                        )
+                        yield f"data: {content_chunk.model_dump_json()}\n\n"
                 if sc.tool_calls:
                     tc_chunk = ChatCompletionChunk(
                         id=chunk_id,
                         model=model,
                         choices=[
-                            StreamChoice(delta=DeltaMessage(tool_calls=sc.tool_calls))
+                            StreamChoice(
+                                delta=DeltaMessage(
+                                    tool_calls=redact_value(sc.tool_calls)
+                                )
+                            )
                         ],
                     )
                     yield f"data: {tc_chunk.model_dump_json()}\n\n"
@@ -867,7 +886,7 @@ async def _handle_stream_tools(
                 choices=[
                     StreamChoice(
                         delta=DeltaMessage(
-                            content=f"\n\nError during generation: {exc}",
+                            content=safe_error_message("stream"),
                         ),
                         finish_reason="stop",
                     )
@@ -876,6 +895,16 @@ async def _handle_stream_tools(
             yield f"data: {error_chunk.model_dump_json()}\n\n"
             yield "data: [DONE]\n\n"
             return
+
+        _tail = _redactor.flush()
+        if _tail:
+            full_content += _tail
+            _tail_chunk = ChatCompletionChunk(
+                id=chunk_id,
+                model=model,
+                choices=[StreamChoice(delta=DeltaMessage(content=_tail))],
+            )
+            yield f"data: {_tail_chunk.model_dump_json()}\n\n"
 
         import json as _json
 
@@ -952,6 +981,7 @@ async def _handle_stream(
     async def generate():
         started_at = time.time()
         full_content = ""
+        _redactor = StreamingRedactor()
         # Start with the configured route, then correct it below if the
         # MultiEngine safety path deliberately bypasses that route.
         actual_telemetry_engine = telemetry_engine
@@ -1008,17 +1038,29 @@ async def _handle_stream(
                         max_tokens=req.max_tokens,
                     )
             async for token in token_iter:
-                full_content += token
+                safe = _redactor.feed(token)
+                full_content += safe
+                if not safe:
+                    continue
                 chunk = ChatCompletionChunk(
                     id=chunk_id,
                     model=model,
                     choices=[
                         StreamChoice(
-                            delta=DeltaMessage(content=token),
+                            delta=DeltaMessage(content=safe),
                         )
                     ],
                 )
                 yield f"data: {chunk.model_dump_json()}\n\n"
+            _tail = _redactor.flush()
+            if _tail:
+                full_content += _tail
+                _tail_chunk = ChatCompletionChunk(
+                    id=chunk_id,
+                    model=model,
+                    choices=[StreamChoice(delta=DeltaMessage(content=_tail))],
+                )
+                yield f"data: {_tail_chunk.model_dump_json()}\n\n"
         except Exception as exc:
             # Surface errors as a content chunk so the frontend can
             # display them instead of silently failing.
@@ -1035,7 +1077,7 @@ async def _handle_stream(
                 choices=[
                     StreamChoice(
                         delta=DeltaMessage(
-                            content=f"\n\nError during generation: {exc}",
+                            content=safe_error_message("stream"),
                         ),
                         finish_reason="stop",
                     )

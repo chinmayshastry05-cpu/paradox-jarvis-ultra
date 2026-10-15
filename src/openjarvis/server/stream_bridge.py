@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import re
 import uuid
 from typing import AsyncGenerator
 
@@ -17,6 +18,11 @@ from fastapi.responses import StreamingResponse
 from openjarvis.agents._stubs import AgentContext, BaseAgent
 from openjarvis.core.events import Event, EventBus, EventType
 from openjarvis.engine._base import looks_like_context_length_error
+from openjarvis.security.delivery_redaction import (
+    redact_text,
+    redact_value,
+    safe_error_message,
+)
 from openjarvis.server.models import (
     ChatCompletionChunk,
     ChatCompletionRequest,
@@ -41,19 +47,17 @@ _DONE = object()
 def _redact_secrets_for_delivery(text: str) -> str:
     """Redact secrets from text about to be streamed to a client.
 
-    Defense-in-depth: the engine's guardrails already scan model output,
-    but tool results forwarded here are not model output and were never
-    scanned. A failure to load the scanner leaves text unchanged rather
-    than breaking the stream — the guardrails remain the primary control.
-    Only secrets are redacted here (never PII), so legitimate content
-    like contact details is untouched.
+    Fail-closed: see :mod:`openjarvis.security.delivery_redaction`. On
+    scanner failure the payload is redacted by the pure-Python fallback,
+    or replaced by a blocked placeholder — never returned raw.
+    Kept as a backwards-compatible alias for :func:`redact_text`.
     """
-    try:
-        from openjarvis.security.scanner import SecretScanner
+    return redact_text(text)
 
-        return SecretScanner().redact(text)
-    except Exception:
-        return text
+
+# Names a named SSE event may carry. Anything else is replaced, so a
+# caller cannot smuggle an arbitrary ``event:`` line into the stream.
+_EVENT_NAME_RE = re.compile(r"^[a-z][a-z0-9_]{0,63}$")
 
 
 def _estimate_prompt_tokens(messages: list) -> int:
@@ -127,14 +131,34 @@ class AgentStreamBridge:
         self._callbacks.clear()
 
     def _format_named_event(self, name: str, data: dict) -> str:
-        """Format an SSE event with an explicit ``event:`` field."""
-        if name == "tool_call_start" and not isinstance(data.get("arguments"), str):
+        """Format an SSE event with an explicit ``event:`` field.
+
+        All structured fields (tool-call arguments, tool results, any
+        nested value) are redacted fail-closed *before* serialisation.
+        Malformed data (non-dict, unserialisable, circular) yields a
+        generic placeholder frame — never the raw payload.
+        """
+        if not isinstance(name, str) or not _EVENT_NAME_RE.match(name):
+            name = "event"
+        try:
+            redacted = redact_value(data)
+        except Exception:
+            redacted = {"error": "unscannable event omitted"}
+        if not isinstance(redacted, dict):
+            redacted = {"value": redacted}
+        if name == "tool_call_start" and not isinstance(redacted.get("arguments"), str):
             # The in-process event bus uses parsed arguments for trace/eval
             # consumers, while the web SSE contract expects their JSON text.
             # Copy before normalizing so other subscribers keep the object.
-            data = dict(data)
-            data["arguments"] = json.dumps(data.get("arguments"))
-        return f"event: {name}\ndata: {json.dumps(data)}\n\n"
+            redacted = dict(redacted)
+            try:
+                redacted["arguments"] = json.dumps(redacted.get("arguments"))
+            except (TypeError, ValueError):
+                redacted["arguments"] = "[REDACTED: unscannable value]"
+        try:
+            return f"event: {name}\ndata: {json.dumps(redacted)}\n\n"
+        except (TypeError, ValueError):
+            return f'event: {name}\ndata: {{"error": "unscannable event omitted"}}\n\n'
 
     def _run_agent(self) -> object:
         """Execute the agent synchronously (called via asyncio.to_thread)."""
@@ -172,8 +196,17 @@ class AgentStreamBridge:
     # ------------------------------------------------------------------
 
     async def stream(self) -> AsyncGenerator[str, None]:
-        """Async generator that yields SSE-formatted strings."""
+        """Async generator that yields SSE-formatted strings.
+
+        Boundary: segments already yielded cannot be retracted. Named
+        events and the final content are each redacted as a whole
+        payload before emission; see
+        :mod:`openjarvis.security.delivery_redaction` for the
+        split-secret boundary.
+        """
         self._subscribe_all()
+        # Echo of the requested model name is delivery surface too.
+        display_model = redact_text(self._model or "")
 
         # Kick off agent.run() in a background thread
         loop = asyncio.get_event_loop()
@@ -188,7 +221,7 @@ class AgentStreamBridge:
             # Send initial role chunk (OpenAI-compatible)
             first_chunk = ChatCompletionChunk(
                 id=self._chunk_id,
-                model=self._model,
+                model=display_model,
                 choices=[
                     StreamChoice(
                         delta=DeltaMessage(role="assistant"),
@@ -224,17 +257,16 @@ class AgentStreamBridge:
                     or looks_like_context_length_error(error_str)
                     or ("400" in error_str and "too long" in error_str.lower())
                 ):
-                    error_content = (
-                        "The input is too long for the model's context window. "
-                        "Please try a shorter message."
-                    )
+                    error_content = safe_error_message("context_length")
                 elif "400" in error_str:
-                    error_content = f"The model returned an error: {error_str}"
+                    # Classification uses the exception server-side;
+                    # its text is never delivered (it may carry secrets).
+                    error_content = safe_error_message("model")
                 else:
-                    error_content = f"Sorry, an error occurred: {error_str}"
+                    error_content = safe_error_message("chat")
                 error_chunk = ChatCompletionChunk(
                     id=self._chunk_id,
-                    model=self._model,
+                    model=display_model,
                     choices=[
                         StreamChoice(
                             delta=DeltaMessage(content=error_content),
@@ -248,16 +280,20 @@ class AgentStreamBridge:
 
             # Emit tool results metadata if any. Tool output is scanned
             # for secrets before delivery: it is not model output, so
-            # the engine guardrails never saw it.
+            # the engine guardrails never saw it. The whole structured
+            # payload (names, output, metadata) is redacted, not just
+            # the output string.
             tool_results_data = []
-            for tr in agent_result.tool_results:
+            for tr in agent_result.tool_results or []:
                 tool_results_data.append(
-                    {
-                        "tool_name": tr.tool_name,
-                        "success": tr.success,
-                        "output": _redact_secrets_for_delivery(tr.content or ""),
-                        "latency_ms": tr.latency_seconds * 1000,
-                    }
+                    redact_value(
+                        {
+                            "tool_name": getattr(tr, "tool_name", ""),
+                            "success": getattr(tr, "success", False),
+                            "output": getattr(tr, "content", "") or "",
+                            "latency_ms": getattr(tr, "latency_seconds", 0) * 1000,
+                        }
+                    )
                 )
 
             if tool_results_data:
@@ -281,7 +317,7 @@ class AgentStreamBridge:
                     token = word if i == 0 else " " + word
                     chunk = ChatCompletionChunk(
                         id=self._chunk_id,
-                        model=self._model,
+                        model=display_model,
                         choices=[
                             StreamChoice(
                                 delta=DeltaMessage(content=token),
@@ -292,12 +328,15 @@ class AgentStreamBridge:
                     await asyncio.sleep(0.012)
 
             # Final chunk: finish_reason + usage
-            prompt_tokens = agent_result.metadata.get("prompt_tokens", 0)
-            completion_tokens = agent_result.metadata.get(
+            _meta = agent_result.metadata
+            if not isinstance(_meta, dict):
+                _meta = {}
+            prompt_tokens = _meta.get("prompt_tokens", 0)
+            completion_tokens = _meta.get(
                 "completion_tokens",
                 0,
             )
-            total_tokens = agent_result.metadata.get("total_tokens", 0)
+            total_tokens = _meta.get("total_tokens", 0)
             if total_tokens == 0:
                 # Fallback: estimate from request messages (incl. system) + content
                 completion_tokens = max(len(content) // 4, 1)
@@ -306,7 +345,7 @@ class AgentStreamBridge:
 
             final_chunk = ChatCompletionChunk(
                 id=self._chunk_id,
-                model=self._model,
+                model=display_model,
                 choices=[
                     StreamChoice(
                         delta=DeltaMessage(),

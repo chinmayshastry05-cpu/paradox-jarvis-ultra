@@ -1744,3 +1744,53 @@ class TestTraceRecording:
         assert trace.query == "stream please"
         # _make_engine streams "Hello", " ", "world".
         assert trace.result == "Hello world"
+
+
+class TestStreamingRedaction:
+    def test_split_secret_across_tokens_never_emitted(self):
+        sample = "sk-abcdefghij1234567890ABCD"
+        engine = _make_engine()
+
+        async def split_stream(
+            messages, *, model, temperature=0.7, max_tokens=1024, **kw
+        ):
+            # Secret split across two tokens, and across the word boundary.
+            yield "key sk-abc"
+            yield "defghij1234567890ABCD end"
+
+        engine.stream = split_stream
+        client = TestClient(create_app(engine, "test-model", config=_test_config()))
+        resp = client.post(
+            "/v1/chat/completions",
+            json={
+                "model": "test-model",
+                "messages": [{"role": "user", "content": "Hello"}],
+                "stream": True,
+            },
+        )
+        assert resp.status_code == 200
+        assert sample not in resp.text
+        assert "[REDACTED:openai_key]" in resp.text
+
+    def test_error_chunk_never_embeds_exception_text(self):
+        sample = "sk-abcdefghij1234567890ABCD"
+        engine = _make_engine()
+
+        async def failing_stream(
+            messages, *, model, temperature=0.7, max_tokens=1024, **kw
+        ):
+            yield "before "
+            raise ValueError(f"upstream 500 {sample}")
+
+        engine.stream = failing_stream
+        client = TestClient(create_app(engine, "test-model", config=_test_config()))
+        resp = client.post(
+            "/v1/chat/completions",
+            json={
+                "model": "test-model",
+                "messages": [{"role": "user", "content": "Hello"}],
+                "stream": True,
+            },
+        )
+        assert resp.status_code == 200
+        assert sample not in resp.text

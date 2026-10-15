@@ -42,6 +42,11 @@ from openjarvis.core.config import DEFAULT_CONFIG_DIR, JarvisConfig, load_config
 from openjarvis.core.types import TelemetryRecord
 from openjarvis.engine._base import InferenceEngine
 from openjarvis.engine._discovery import get_engine
+from openjarvis.security.delivery_redaction import (
+    redact_text,
+    redact_value,
+    safe_error_message,
+)
 from openjarvis.telemetry.store import TelemetryStore
 
 logger = logging.getLogger(__name__)
@@ -344,8 +349,22 @@ class ResearchRequest(BaseModel):
 
 
 def _sse(event: Dict[str, Any]) -> str:
-    """Serialize one event dict to an SSE ``data: ...\\n\\n`` frame."""
-    return f"data: {json.dumps(event, ensure_ascii=False)}\n\n"
+    """Serialize one event dict to an SSE ``data: ...\\n\\n`` frame.
+
+    The whole structured event is redacted fail-closed before
+    serialisation; an unscannable event yields a placeholder frame,
+    never the raw payload.
+    """
+    try:
+        redacted = redact_value(event)
+        if not isinstance(redacted, dict):
+            redacted = {"type": "error", "message": safe_error_message("research")}
+        return f"data: {json.dumps(redacted, ensure_ascii=False)}\n\n"
+    except Exception:
+        return (
+            'data: {"type": "error", '
+            '"message": "Research failed. See server logs for details."}\n\n'
+        )
 
 
 def _chunk_synthesis(text: str, window_chars: int = 40) -> list[str]:
@@ -433,7 +452,7 @@ async def _stream_research(
         yield _sse(
             {
                 "type": "error",
-                "message": f"Research failed: {type(exc).__name__}: {exc}",
+                "message": safe_error_message("research"),
             }
         )
         yield _sse({"type": "done", "usage": {}})
@@ -493,7 +512,7 @@ async def _stream_research(
                 pass
             loop.call_soon_threadsafe(
                 queue.put_nowait,
-                {"type": "error", "message": f"{type(exc).__name__}: {exc}"},
+                {"type": "error", "message": safe_error_message("research")},
             )
         finally:
             loop.call_soon_threadsafe(queue.put_nowait, _DONE)
@@ -522,7 +541,9 @@ async def _stream_research(
             # ``sources`` array is the renumbered, deduped citation list the
             # frontend should render under the final answer.
             if etype == "final_answer":
-                final_answer = event.get("text", "")
+                # Whole answer redacted before chunking, so a secret
+                # is never split across emitted synthesis chunks.
+                final_answer = redact_text(event.get("text", "") or "")
                 final_sources = list(event.get("sources") or [])
                 for piece in _chunk_synthesis(final_answer or ""):
                     yield _sse({"type": "synthesis", "text": piece})
@@ -545,7 +566,7 @@ async def _stream_research(
         yield _sse(
             {
                 "type": "error",
-                "message": f"Research failed: {type(exc).__name__}: {exc}",
+                "message": safe_error_message("research"),
             }
         )
         yield _sse({"type": "done", "usage": final_usage, "sources": final_sources})

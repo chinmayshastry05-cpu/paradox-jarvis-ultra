@@ -18,6 +18,7 @@ from openjarvis.core.config import load_config
 from openjarvis.core.events import EventBus
 from openjarvis.core.types import Message, Role
 from openjarvis.memory import publish_completed_exchange
+from openjarvis.security.delivery_redaction import redact_text
 
 logger = logging.getLogger(__name__)
 
@@ -494,6 +495,9 @@ def chat(
                     else str(result)
                 )
 
+            # Redact before display / voice / history: the terminal is a
+            # delivery surface, and history feeds the next turn.
+            content = redact_text(content if isinstance(content, str) else "")
             history.append(Message(role=Role.ASSISTANT, content=content))
             console.print()
             console.print(Markdown(content))

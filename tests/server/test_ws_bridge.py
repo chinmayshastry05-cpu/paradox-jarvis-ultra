@@ -251,3 +251,18 @@ class TestIncludeAllRoutesBusWiring:
         assert data["type"] == "agent_tick_start"
         assert data["data"]["agent_id"] == "test-123"
         make_system.assert_called_once()
+
+
+class TestWSBridgeRedaction:
+    def test_tool_call_event_payload_redacted_before_delivery(self, app, event_bus):
+        sample = "sk-abcdefghij1234567890ABCD"
+        client = TestClient(app)
+        with client.websocket_connect("/v1/agents/events") as ws:
+            event_bus.publish(
+                EventType.TOOL_CALL_START,
+                {"agent": "a1", "tool": "search", "arguments": {"q": sample}},
+            )
+            time.sleep(0.05)
+            data = ws.receive_json()
+            assert sample not in str(data)
+            assert data["data"]["arguments"]["q"] == "[REDACTED:openai_key]"

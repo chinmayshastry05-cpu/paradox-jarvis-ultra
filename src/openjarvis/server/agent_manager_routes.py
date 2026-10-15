@@ -20,6 +20,12 @@ from openjarvis.agents.tool_resolver import (
 from openjarvis.agents.tool_resolver import (
     ensure_registries_populated as _ensure_registries_populated,
 )
+from openjarvis.security.delivery_redaction import (
+    StreamingRedactor,
+    redact_text,
+    redact_value,
+    safe_error_message,
+)
 from openjarvis.server.model_capabilities import is_embed_only_model
 
 try:
@@ -860,7 +866,7 @@ def _tool_progress_label(tool_name: str, args: str) -> str:
             parsed = _json.loads(args)
             q = parsed.get("query") or parsed.get("question") or ""
             if q:
-                label += f' — "{q[:50]}"'
+                label += f' — "{redact_text(q[:50])}"'
         except Exception:
             pass
     return label
@@ -1121,7 +1127,11 @@ async def _stream_managed_agent(
                         content = result.content or "No results found."
                         agent_metadata = result.metadata or {}
                     except Exception as exc:
-                        content = f"Error: {exc}"
+                        logger.error(
+                            "Deep-research agent failed: %s", exc, exc_info=True
+                        )
+                        content = safe_error_message("chat")
+                        agent_metadata["__delivery_error__"] = True
                     finally:
                         resolved_toolkit.close()
 
@@ -1129,7 +1139,7 @@ async def _stream_managed_agent(
 
                     # Log BEFORE queue put (put triggers SSE end)
                     try:
-                        is_err = content.startswith("Error:")
+                        is_err = bool(agent_metadata.pop("__delivery_error__", False))
                         manager.add_learning_log(
                             agent_id,
                             "query_error" if is_err else "query_complete",
@@ -1168,13 +1178,13 @@ async def _stream_managed_agent(
                         _run_with_tick_cleanup,
                         name=f"managed-agent-deep-research-{agent_id}",
                     )
-                except Exception as exc:
+                except Exception:
                     worker_owns_tick.clear()
                     _complete_research_response()
                     progress_q.put(
                         {
                             "type": "error",
-                            "content": f"Error: {exc}",
+                            "content": safe_error_message("chat"),
                             "metadata": {},
                             "elapsed": _dr_time.time() - _dr_start,
                         }
@@ -1203,7 +1213,7 @@ async def _stream_managed_agent(
                         # Structured event so the UI can render a tool_call
                         # message card (same shape as the non-DR path).
                         _start_payload = json.dumps(
-                            {"tool": tool, "arguments": full_args}
+                            redact_value({"tool": tool, "arguments": full_args})
                         )
                         yield f"event: tool_call_start\ndata: {_start_payload}\n\n"
                         # Keep the human-readable progress label for the
@@ -1239,17 +1249,22 @@ async def _stream_managed_agent(
                         )
                         _pending_dr_starts.pop(tool, None)
                         _end_payload = json.dumps(
-                            {
-                                "tool": tool,
-                                "success": bool(event.get("success", False)),
-                                "latency": float(event.get("latency", 0.0)),
-                                "result": event.get("result", ""),
-                            }
+                            redact_value(
+                                {
+                                    "tool": tool,
+                                    "success": bool(event.get("success", False)),
+                                    "latency": float(event.get("latency", 0.0)),
+                                    "result": event.get("result", ""),
+                                }
+                            )
                         )
                         yield f"event: tool_call_end\ndata: {_end_payload}\n\n"
 
                     elif event["type"] in ("done", "error"):
-                        content = event["content"]
+                        # Whole payload redacted before word-by-word
+                        # replay, so a secret is never split across
+                        # emitted words.
+                        content = redact_text(event["content"] or "")
                         meta = event.get("metadata", {})
                         elapsed_s = event.get("elapsed", 0)
 
@@ -1430,6 +1445,7 @@ async def _stream_managed_agent(
         while turns < max_turns:
             turns += 1
             turn_content = ""
+            _redactor = StreamingRedactor()
             tool_call_fragments: Dict[int, Dict[str, Any]] = {}
             current_finish_reason = None
 
@@ -1441,25 +1457,30 @@ async def _stream_managed_agent(
                     max_tokens=max_tokens,
                     **stream_kwargs,
                 ):
-                    # Stream content tokens immediately to the client
+                    # Stream content tokens immediately to the client,
+                    # buffered so a secret split across tokens is
+                    # redacted before any of its bytes are emitted.
                     if chunk.content:
                         turn_content += chunk.content
-                        # Mirror partial content so a disconnect during
-                        # generation still saves what we've produced.
-                        persist_state["content"] = collected_content + turn_content
-                        chunk_data = {
-                            "id": chunk_id,
-                            "object": "chat.completion.chunk",
-                            "model": model,
-                            "choices": [
-                                {
-                                    "index": 0,
-                                    "delta": {"content": chunk.content},
-                                    "finish_reason": None,
-                                }
-                            ],
-                        }
-                        yield f"data: {json.dumps(chunk_data)}\n\n"
+                        chunk.content = _redactor.feed(chunk.content)
+                        if chunk.content:
+                            # Mirror partial content so a disconnect
+                            # during generation still saves what we've
+                            # produced.
+                            persist_state["content"] = collected_content + turn_content
+                            chunk_data = {
+                                "id": chunk_id,
+                                "object": "chat.completion.chunk",
+                                "model": model,
+                                "choices": [
+                                    {
+                                        "index": 0,
+                                        "delta": {"content": chunk.content},
+                                        "finish_reason": None,
+                                    }
+                                ],
+                            }
+                            yield f"data: {json.dumps(chunk_data)}\n\n"
 
                     # Accumulate tool_call fragments
                     if chunk.tool_calls:
@@ -1480,7 +1501,7 @@ async def _stream_managed_agent(
                     "choices": [
                         {
                             "index": 0,
-                            "delta": {"content": f"Error: {exc}"},
+                            "delta": {"content": safe_error_message("stream")},
                             "finish_reason": "stop",
                         }
                     ],
@@ -1488,6 +1509,22 @@ async def _stream_managed_agent(
                 yield f"data: {json.dumps(error_data)}\n\n"
                 yield "data: [DONE]\n\n"
                 return
+
+            _turn_tail = _redactor.flush()
+            if _turn_tail:
+                chunk_data = {
+                    "id": chunk_id,
+                    "object": "chat.completion.chunk",
+                    "model": model,
+                    "choices": [
+                        {
+                            "index": 0,
+                            "delta": {"content": _turn_tail},
+                            "finish_reason": None,
+                        }
+                    ],
+                }
+                yield f"data: {json.dumps(chunk_data)}\n\n"
 
             # Handle tool calls: execute tools and loop for next turn
             if tool_call_fragments and current_finish_reason == "tool_calls":
@@ -1526,7 +1563,7 @@ async def _stream_managed_agent(
                     tool_succeeded = False
 
                     _start_payload = json.dumps(
-                        {"tool": tool_name, "arguments": tool_args}
+                        redact_value({"tool": tool_name, "arguments": tool_args})
                     )
                     yield f"event: tool_call_start\ndata: {_start_payload}\n\n"
                     try:
@@ -1563,7 +1600,7 @@ async def _stream_managed_agent(
                             tool_exc,
                             exc_info=True,
                         )
-                        tool_result_content = f"Error executing {tool_name}: {tool_exc}"
+                        tool_result_content = safe_error_message("tool")
 
                     tool_latency_ms = (_time.monotonic() * 1000) - tool_start_ms
                     collected_tool_calls.append(
@@ -1594,12 +1631,14 @@ async def _stream_managed_agent(
                     except Exception as _tr_exc:
                         logger.warning("Log tool_result failed: %s", _tr_exc)
                     _end_payload = json.dumps(
-                        {
-                            "tool": tool_name,
-                            "success": tool_succeeded,
-                            "latency": tool_latency_ms,
-                            "result": tool_result_content,
-                        }
+                        redact_value(
+                            {
+                                "tool": tool_name,
+                                "success": tool_succeeded,
+                                "latency": tool_latency_ms,
+                                "result": tool_result_content,
+                            }
+                        )
                     )
                     yield f"event: tool_call_end\ndata: {_end_payload}\n\n"
 

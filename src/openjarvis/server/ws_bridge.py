@@ -7,6 +7,7 @@ import logging
 from typing import Any
 
 from openjarvis.core.events import Event, EventBus, EventType
+from openjarvis.security.delivery_redaction import redact_value
 
 try:
     from fastapi import APIRouter, WebSocket, WebSocketDisconnect
@@ -39,10 +40,13 @@ def create_ws_router(event_bus: EventBus) -> Any:
 
     def _on_event(event: Event) -> None:
         """Forward event to all connected WebSocket client queues (thread-safe)."""
+        # Whole structured payload redacted fail-closed before it
+        # reaches any connected client (tool-call arguments/results
+        # included). Unscannable data becomes a placeholder.
         payload = {
             "type": event.event_type.value,
             "timestamp": event.timestamp,
-            "data": event.data or {},
+            "data": redact_value(event.data or {}),
         }
         for ws, (queue, loop) in list(clients.items()):
             agent_filter = getattr(ws, "_agent_filter", None)
