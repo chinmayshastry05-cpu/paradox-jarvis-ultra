@@ -474,18 +474,9 @@ class SystemBuilder:
         rate_limiter=None,
     ):
         """Resolve tool instances via MCPServer (primary) + external MCP servers."""
+        from openjarvis.agents.tool_resolver import BROWSER_SUB_TOOLS
         from openjarvis.mcp.server import MCPServer
         from openjarvis.tools._paths import validate_allowed_dirs
-
-        internal_server = MCPServer(
-            bus=bus,
-            capability_policy=capability_policy,
-            rate_limiter=rate_limiter,
-            agent_id="system:mcp",
-            allowed_dirs=validate_allowed_dirs(config.security.allowed_dirs),
-        )
-        for tool in internal_server.get_tools():
-            self._inject_tool_deps(tool, engine, model, memory_backend, channel_backend)
 
         tool_names = self._tool_names
         if tool_names is None:
@@ -499,6 +490,19 @@ class SystemBuilder:
                     tool_names = [n.strip() for n in raw.split(",") if n.strip()]
             else:
                 tool_names = []
+
+        internal_server = MCPServer(
+            bus=bus,
+            capability_policy=capability_policy,
+            rate_limiter=rate_limiter,
+            agent_id="system:mcp",
+            allowed_dirs=validate_allowed_dirs(config.security.allowed_dirs),
+            # Native browser tools stay off unless explicitly named:
+            # they are redundant with the bridge integration.
+            include_browser_tools=any(n in BROWSER_SUB_TOOLS for n in tool_names),
+        )
+        for tool in internal_server.get_tools():
+            self._inject_tool_deps(tool, engine, model, memory_backend, channel_backend)
 
         if tool_names:
             all_tools = {t.spec.name: t for t in internal_server.get_tools()}
@@ -744,6 +748,39 @@ class SystemBuilder:
             discovered = [t for t in discovered if t.spec.name in include_tools]
         if exclude_tools:
             discovered = [t for t in discovered if t.spec.name not in exclude_tools]
+
+        # Bridge tools get the secure-profile guard (allowlist +
+        # per-origin + confirmation). The builder's configured tool
+        # list counts as an explicit opt-in for consequential tools.
+        from openjarvis.mcp.browser_bridge import (
+            BRIDGE_SERVER_NAME,
+            apply_bridge_guard,
+        )
+
+        if name == BRIDGE_SERVER_NAME:
+            # Explicit opt-ins: the builder's tool list plus the config's
+            # tool lists (config.tools.enabled / config.agent.tools).
+            explicit: list[str] = []
+            raw_names = getattr(self, "_tool_names", None)
+            if isinstance(raw_names, str):
+                explicit += [n.strip() for n in raw_names.split(",") if n.strip()]
+            elif isinstance(raw_names, (list, tuple)):
+                explicit += [n for n in raw_names if isinstance(n, str)]
+            cfg_obj = getattr(self, "_config", None)
+            for section in (
+                getattr(cfg_obj, "tools", None),
+                getattr(cfg_obj, "agent", None),
+            ):
+                raw = getattr(section, "enabled", None) or getattr(
+                    section, "tools", None
+                )
+                if isinstance(raw, str):
+                    explicit += [n.strip() for n in raw.split(",") if n.strip()]
+                elif isinstance(raw, (list, tuple)):
+                    explicit += [n for n in raw if isinstance(n, str)]
+            discovered = apply_bridge_guard(
+                discovered, cfg=cfg, explicit_tools=explicit or None
+            )
 
         logger.info(
             "Discovered %d tools from MCP server '%s'",

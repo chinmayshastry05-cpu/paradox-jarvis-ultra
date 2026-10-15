@@ -63,6 +63,7 @@ class MCPServer:
         rate_limiter: Optional[Any] = None,
         agent_id: str = _MCP_AGENT_ID,
         allowed_dirs: Optional[List[str]] = None,
+        include_browser_tools: bool = False,
     ) -> None:
         """Create an MCP server with the same dispatch gates as other agents.
 
@@ -76,9 +77,19 @@ class MCPServer:
         ``allowed_dirs`` supplies the active configuration's filesystem policy
         to auto-discovered file tools; explicitly supplied tools keep their own
         constructor policy.
+
+        ``include_browser_tools`` is the explicit opt-in for the native
+        ``browser_*`` tools. They stay OFF by default: they are redundant
+        with the agentic-browser-bridge integration (see
+        ``openjarvis.mcp.browser_bridge``) and have no confirmation or
+        per-origin gate. Passing an explicit tool list is unaffected —
+        this flag only gates auto-discovery.
         """
         if tools is None:
-            tools = self._auto_discover_tools(allowed_dirs=allowed_dirs)
+            tools = self._auto_discover_tools(
+                allowed_dirs=allowed_dirs,
+                include_browser_tools=include_browser_tools,
+            )
         self._tools: Dict[str, BaseTool] = {t.spec.name: t for t in tools}
         self._executor = ToolExecutor(
             tools,
@@ -90,12 +101,18 @@ class MCPServer:
 
     @staticmethod
     def _auto_discover_tools(
-        *, allowed_dirs: Optional[List[str]] = None
+        *,
+        allowed_dirs: Optional[List[str]] = None,
+        include_browser_tools: bool = False,
     ) -> List[BaseTool]:
         """Auto-discover all built-in tools by direct import.
 
         Does not rely on ToolRegistry state — imports each tool class
         directly and attempts instantiation with no arguments.
+
+        Native ``browser_*`` tools are skipped unless
+        ``include_browser_tools`` is set: they are redundant with the
+        bridge integration and have no confirmation/origin gate.
         """
         tools: List[BaseTool] = []
         _tool_classes: List[type] = []
@@ -205,9 +222,15 @@ class MCPServer:
         try:
             from openjarvis.core.registry import ToolRegistry
 
+            if not include_browser_tools:
+                from openjarvis.agents.tool_resolver import BROWSER_SUB_TOOLS
+
+                skip_browser = set(BROWSER_SUB_TOOLS)
+            else:
+                skip_browser = set()
             known_names = {t.spec.name for t in tools}
             for key in ToolRegistry.keys():
-                if key not in known_names:
+                if key not in known_names and key not in skip_browser:
                     try:
                         kwargs = (
                             {"allowed_dirs": allowed_dirs}

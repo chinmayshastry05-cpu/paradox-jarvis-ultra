@@ -758,6 +758,17 @@ def _get_mcp_tools_locked(
             if exclude_tools:
                 discovered = [t for t in discovered if t.spec.name not in exclude_tools]
 
+            # Bridge tools get the secure-profile guard (allowlist +
+            # per-origin + confirmation); no confirmer is configured on
+            # this path, so consequential tools stay refused here.
+            from openjarvis.mcp.browser_bridge import (
+                BRIDGE_SERVER_NAME,
+                apply_bridge_guard,
+            )
+
+            if name == BRIDGE_SERVER_NAME:
+                discovered = apply_bridge_guard(discovered, cfg=cfg)
+
             staged: list[tuple[Any, Any]] = []
             staged_names = set(adapters_by_name)
             for adapter in discovered:
