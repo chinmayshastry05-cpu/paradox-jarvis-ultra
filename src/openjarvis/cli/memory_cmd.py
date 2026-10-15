@@ -296,6 +296,172 @@ def clear(yes: bool) -> None:
     console.print(f"[green]Cleared {removed} memory fact(s).[/green]")
 
 
+def _get_sqlite_fact_store():
+    """Instantiate the structured-fact (SQLite + FTS5) store.
+
+    Separate from the JSONL auto-extracted facts used by ``memory list`` /
+    ``trust`` / ``clear``: this store holds facts recorded deliberately via
+    ``remember`` / ``correct``, with scopes, supersede history, and ranked
+    retrieval.
+    """
+    from openjarvis.core.paths import get_config_dir
+    from openjarvis.memory.sqlite_facts import SqliteFactStore
+
+    return SqliteFactStore(get_config_dir() / "memory_facts.db")
+
+
+def _resolve_fact_ref(store, ref: str):
+    """Resolve a ``forget`` / ``correct`` reference to a fact.
+
+    Accepts a full id, a unique id prefix, or the 1-based index shown by
+    ``memory show``. Returns the fact or ``None``.
+    """
+    facts = store.list()
+    for fact in facts:
+        if fact.id == ref:
+            return fact
+    if ref.isdigit():
+        index = int(ref)
+        if 1 <= index <= len(facts):
+            return facts[index - 1]
+    matches = [fact for fact in facts if fact.id.startswith(ref)]
+    if len(matches) == 1:
+        return matches[0]
+    return None
+
+
+@memory.command()
+@click.argument("text", nargs=-1, required=True)
+@click.option("--source", default="", help="Where this fact came from.")
+@click.option(
+    "--scope",
+    default="global",
+    help="Scope the fact applies to (default: global).",
+)
+def remember(text: tuple[str, ...], source: str, scope: str) -> None:
+    """Remember a fact: ``jarvis memory remember --source notes <text>``."""
+    console = Console()
+    store = _get_sqlite_fact_store()
+    try:
+        fact = store.remember(" ".join(text), source=source, scope=scope)
+    except ValueError as exc:
+        console.print(f"[red]{exc}[/red]")
+        raise SystemExit(1)
+    console.print(f"[green]Remembered fact {fact.id[:8]}:[/green]")
+    console.print(f"  {fact.text}")
+
+
+@memory.command()
+@click.argument("ref")
+@click.option(
+    "--yes",
+    "-y",
+    is_flag=True,
+    default=False,
+    help="Skip the confirmation prompt.",
+)
+def forget(ref: str, yes: bool) -> None:
+    """Forget a fact by id, id prefix, or number from ``memory show``.
+
+    The fact is hard-deleted from the store AND the FTS index; only its id
+    is kept in the deletion log for audit.
+    """
+    console = Console()
+    store = _get_sqlite_fact_store()
+    fact = _resolve_fact_ref(store, ref)
+    if fact is None:
+        console.print(f"[red]No fact matching {ref!r}.[/red]")
+        raise SystemExit(1)
+    if not yes and not click.confirm(f"Forget this fact?\n  {fact.text}"):
+        console.print("[dim]Aborted.[/dim]")
+        return
+    store.forget(fact.id)
+    console.print(f"[green]Forgot fact {fact.id[:8]}.[/green]")
+
+
+@memory.command()
+@click.option("--query", "-q", default="", help="Ranked search over facts.")
+@click.option("--scope", default=None, help="Only show facts in this scope.")
+@click.option(
+    "--top-k",
+    "-k",
+    default=50,
+    type=int,
+    help="Max results (only with --query).",
+)
+def show(query: str, scope: str | None, top_k: int) -> None:
+    """Show stored facts, optionally ranked by relevance to --query."""
+    console = Console()
+    store = _get_sqlite_fact_store()
+    if query:
+        hits = store.retrieve(query, scope=scope, top_k=top_k)
+        rows = [(hit.fact, f"{hit.score:.3f}") for hit in hits]
+    else:
+        rows = [(fact, "-") for fact in store.list(scope=scope)]
+    if not rows:
+        console.print("[yellow]No memory facts stored yet.[/yellow]")
+        return
+    table = Table(title=f"Memory Facts ({len(rows)})")
+    table.add_column("#", style="dim", width=4)
+    table.add_column("ID", style="dim", width=8)
+    table.add_column("Score", width=7)
+    table.add_column("Scope", style="cyan")
+    table.add_column("Source", style="cyan")
+    table.add_column("Fact")
+    for i, (fact, score) in enumerate(rows, 1):
+        table.add_row(
+            str(i), fact.id[:8], score, fact.scope, fact.source or "-", fact.text
+        )
+    console.print(table)
+
+
+@memory.command()
+@click.argument("ref")
+@click.argument("text", nargs=-1, required=True)
+def correct(ref: str, text: tuple[str, ...]) -> None:
+    """Correct a fact: the old fact is superseded, never returned again.
+
+    ``jarvis memory correct 3 <new text>`` — REF is an id, id prefix, or the
+    number shown by ``memory show``.
+    """
+    console = Console()
+    store = _get_sqlite_fact_store()
+    fact = _resolve_fact_ref(store, ref)
+    if fact is None:
+        console.print(f"[red]No fact matching {ref!r}.[/red]")
+        raise SystemExit(1)
+    try:
+        replacement = store.correct(fact.id, " ".join(text))
+    except ValueError as exc:
+        console.print(f"[red]{exc}[/red]")
+        raise SystemExit(1)
+    console.print("[green]Corrected:[/green]")
+    console.print(f"  old: {fact.text}")
+    console.print(f"  new: {replacement.text}")
+
+
+@memory.command()
+def summary() -> None:
+    """Show per-source summaries: fact counts + latest fact per source."""
+    console = Console()
+    store = _get_sqlite_fact_store()
+    summaries = store.summaries_by_source()
+    if not summaries:
+        console.print("[yellow]No memory facts stored yet.[/yellow]")
+        return
+    table = Table(title="Memory Facts by Source")
+    table.add_column("Source", style="cyan")
+    table.add_column("Facts", width=6)
+    table.add_column("Latest Fact")
+    for entry in summaries:
+        table.add_row(
+            entry["source"] or "-",
+            str(entry["count"]),
+            entry["latest_text"],
+        )
+    console.print(table)
+
+
 @memory.command()
 @click.option(
     "--backend",
