@@ -1636,6 +1636,11 @@ class SpeechConfig:
     tts_backend: str = "kokoro"  # "kokoro", "openai_tts", "cartesia"
     voice_id: str = "bm_george"
     voice_speed: float = 1.0
+    # Opt-in local wake word. OFF by default; detection is local-only
+    # (transcript matching via a local STT backend) and never sends audio
+    # to any cloud provider. Not wired into the chat REPL loop.
+    wake_word_enabled: bool = False
+    wake_word_phrase: str = "jarvis"
 
 
 @dataclass(slots=True)
