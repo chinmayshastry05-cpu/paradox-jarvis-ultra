@@ -47,7 +47,7 @@ jobs:
           EOF
           python3 -c "import json, yaml; json.dump(yaml.safe_load(open('/tmp/tauri-release-config.yml')), open('frontend/src-tauri/tauri.release.conf.json', 'w'), indent=2)"
       - name: Build desktop app
-        uses: tauri-apps/tauri-action@v0
+        uses: tauri-apps/tauri-action@v1
         with:
           projectPath: frontend
           args: ${{ matrix.args }} --config src-tauri/tauri.release.conf.json
